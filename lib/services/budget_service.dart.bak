@@ -76,7 +76,7 @@ class BudgetService {
       final response = await _supabase
           .from('budgets')
           .select()
-          .eq('id', budgetId)
+          .filter('id', 'eq', budgetId)
           .single();
 
       return Budget.fromJson(response);
@@ -129,7 +129,7 @@ class BudgetService {
       await _supabase
           .from('budgets')
           .update(updatedBudget.toJson())
-          .eq('id', budget.id);
+          .filter('id', 'eq', budget.id);
     } catch (e) {
       print('Erreur lors de la mise à jour du budget: $e');
       rethrow;
@@ -139,7 +139,7 @@ class BudgetService {
   // Supprimer un budget
   Future<void> deleteBudget(String budgetId) async {
     try {
-      await _supabase.from('budgets').delete().eq('id', budgetId);
+      await _supabase.from('budgets').delete().filter('id', 'eq', budgetId);
     } catch (e) {
       print('Erreur lors de la suppression du budget: $e');
       rethrow;
@@ -152,7 +152,7 @@ class BudgetService {
       final response = await _supabase
           .from('budget_transactions')
           .select()
-          .eq('budget_id', budgetId)
+          .filter('budget_id', 'eq', budgetId)
           .order('transaction_date', ascending: false);
 
       return response.map<BudgetTransaction>((json) => BudgetTransaction.fromJson(json)).toList();
@@ -170,31 +170,12 @@ class BudgetService {
       final response = await _supabase
           .from('budget_transactions')
           .select()
-          .eq('created_by', userId)
+          .filter('created_by', 'eq', userId)
           .order('transaction_date', ascending: false);
 
       return response.map<BudgetTransaction>((json) => BudgetTransaction.fromJson(json)).toList();
     } catch (e) {
       print('Erreur lors de la récupération des transactions: $e');
-      rethrow;
-    }
-  }
-
-  // Récupérer les transactions récentes (pour le tableau de bord)
-  Future<List<BudgetTransaction>> getRecentTransactions(int limit) async {
-    try {
-      final userId = _supabase.auth.currentUser!.id;
-      
-      final response = await _supabase
-          .from('budget_transactions')
-          .select()
-          .eq('created_by', userId)
-          .order('transaction_date', ascending: false)
-          .limit(limit);
-
-      return response.map<BudgetTransaction>((json) => BudgetTransaction.fromJson(json)).toList();
-    } catch (e) {
-      print('Erreur lors de la récupération des transactions récentes: $e');
       rethrow;
     }
   }
@@ -205,7 +186,7 @@ class BudgetService {
       final response = await _supabase
           .from('budget_transactions')
           .select()
-          .eq('project_id', projectId)
+          .filter('project_id', 'eq', projectId)
           .order('transaction_date', ascending: false);
 
       return response.map<BudgetTransaction>((json) => BudgetTransaction.fromJson(json)).toList();
@@ -221,7 +202,7 @@ class BudgetService {
       final response = await _supabase
           .from('budget_transactions')
           .select()
-          .eq('phase_id', phaseId)
+          .filter('phase_id', 'eq', phaseId)
           .order('transaction_date', ascending: false);
 
       return response.map<BudgetTransaction>((json) => BudgetTransaction.fromJson(json)).toList();
@@ -237,103 +218,12 @@ class BudgetService {
       final response = await _supabase
           .from('budget_transactions')
           .select()
-          .eq('task_id', taskId)
+          .filter('task_id', 'eq', taskId)
           .order('transaction_date', ascending: false);
 
       return response.map<BudgetTransaction>((json) => BudgetTransaction.fromJson(json)).toList();
     } catch (e) {
       print('Erreur lors de la récupération des transactions pour la tâche: $e');
-      rethrow;
-    }
-  }
-
-  // Récupérer les budgets d'une équipe
-  Future<List<Budget>> getTeamBudgets(String teamId) async {
-    try {
-      // Récupérer les projets associés à l'équipe
-      final projectsResponse = await _supabase
-          .from('team_projects')
-          .select('project_id')
-          .eq('team_id', teamId);
-      
-      final projectIds = projectsResponse.map<String>((json) => json['project_id'] as String).toList();
-      
-      if (projectIds.isEmpty) {
-        return [];
-      }
-      
-      // Récupérer les budgets liés à ces projets via les allocations individuellement
-      List<String> budgetIds = [];
-      for (final projectId in projectIds) {
-        final response = await _supabase
-            .from('budget_allocations')
-            .select('budget_id')
-            .eq('project_id', projectId);
-            
-        for (final item in response) {
-          final budgetId = item['budget_id'] as String;
-          if (!budgetIds.contains(budgetId)) {
-            budgetIds.add(budgetId);
-          }
-        }
-      }
-      
-      if (budgetIds.isEmpty) {
-        return [];
-      }
-      
-      // Récupérer les détails des budgets individuellement
-      List<Budget> budgets = [];
-      for (final budgetId in budgetIds) {
-        final response = await _supabase
-            .from('budgets')
-            .select()
-            .eq('id', budgetId)
-            .single();
-            
-        budgets.add(Budget.fromJson(response));
-      }
-      
-      // Trier les budgets par date
-      budgets.sort((a, b) => b.startDate.compareTo(a.startDate));
-      
-      return budgets;
-    } catch (e) {
-      print('Erreur lors de la récupération des budgets de l\'équipe: $e');
-      rethrow;
-    }
-  }
-
-  // Récupérer les transactions d'une équipe
-  Future<List<BudgetTransaction>> getTeamTransactions(String teamId) async {
-    try {
-      // Récupérer les projets associés à l'équipe
-      final projectsResponse = await _supabase
-          .from('team_projects')
-          .select('project_id')
-          .eq('team_id', teamId);
-      
-      final projectIds = projectsResponse.map<String>((json) => json['project_id'] as String).toList();
-      
-      if (projectIds.isEmpty) {
-        return [];
-      }
-      
-      // Récupérer les transactions liées à ces projets individuellement
-      List<BudgetTransaction> transactions = [];
-      for (final projectId in projectIds) {
-        final response = await _supabase
-            .from('budget_transactions')
-            .select()
-            .eq('project_id', projectId)
-            .order('transaction_date', ascending: false);
-            
-        transactions.addAll(response.map<BudgetTransaction>((json) => BudgetTransaction.fromJson(json)).toList());
-      }
-      
-      return transactions;
-    } catch (e) {
-      print('Erreur lors de la récupération des transactions de l\'équipe: $e');
       rethrow;
     }
   }
@@ -348,7 +238,7 @@ class BudgetService {
     String description,
     DateTime transactionDate,
     String category,
-    String? subcategory,
+    String type,
   ) async {
     try {
       final userId = _supabase.auth.currentUser!.id;
@@ -365,7 +255,7 @@ class BudgetService {
         description: description,
         transactionDate: transactionDate,
         category: category,
-        subcategory: subcategory,
+        type: type,
         createdAt: now,
         createdBy: userId,
       );
@@ -376,7 +266,7 @@ class BudgetService {
       if (budgetId != null) {
         final budget = await getBudgetById(budgetId);
         double newAmount;
-        if (category == 'expense') {
+        if (type == 'expense') {
           newAmount = budget.currentAmount - amount;
         } else {
           newAmount = budget.currentAmount + amount;
@@ -410,7 +300,7 @@ class BudgetService {
       await _supabase
           .from('budget_transactions')
           .update(updatedTransaction.toJson())
-          .eq('id', transaction.id);
+          .filter('id', 'eq', transaction.id);
 
       // Mettre à jour le montant actuel du budget si nécessaire
       if (transaction.budgetId != null) {
@@ -418,14 +308,14 @@ class BudgetService {
         double newAmount = budget.currentAmount;
 
         // Annuler l'effet de l'ancienne transaction
-        if (oldTransaction.category == 'expense') {
+        if (oldTransaction.type == 'expense') {
           newAmount += oldTransaction.amount;
         } else {
           newAmount -= oldTransaction.amount;
         }
 
         // Appliquer l'effet de la nouvelle transaction
-        if (transaction.category == 'expense') {
+        if (transaction.type == 'expense') {
           newAmount -= transaction.amount;
         } else {
           newAmount += transaction.amount;
@@ -454,7 +344,7 @@ class BudgetService {
       await _supabase
           .from('budget_transactions')
           .delete()
-          .eq('id', transactionId);
+          .filter('id', 'eq', transactionId);
 
       // Mettre à jour le montant actuel du budget si nécessaire
       if (transaction.budgetId != null) {
@@ -462,7 +352,7 @@ class BudgetService {
         double newAmount = budget.currentAmount;
 
         // Annuler l'effet de la transaction supprimée
-        if (transaction.category == 'expense') {
+        if (transaction.type == 'expense') {
           newAmount += transaction.amount;
         } else {
           newAmount -= transaction.amount;
@@ -487,7 +377,7 @@ class BudgetService {
       final response = await _supabase
           .from('budget_transactions')
           .select()
-          .eq('id', transactionId)
+          .filter('id', 'eq', transactionId)
           .single();
 
       return BudgetTransaction.fromJson(response);
@@ -503,7 +393,7 @@ class BudgetService {
       final response = await _supabase
           .from('budget_allocations')
           .select()
-          .eq('budget_id', budgetId)
+          .filter('budget_id', 'eq', budgetId)
           .order('created_at', ascending: false);
 
       return response.map<BudgetAllocation>((json) => BudgetAllocation.fromJson(json)).toList();
@@ -519,7 +409,7 @@ class BudgetService {
       final response = await _supabase
           .from('budget_allocations')
           .select()
-          .eq('project_id', projectId)
+          .filter('project_id', 'eq', projectId)
           .order('created_at', ascending: false);
 
       return response.map<BudgetAllocation>((json) => BudgetAllocation.fromJson(json)).toList();
@@ -547,7 +437,6 @@ class BudgetService {
         projectId: projectId,
         amount: amount,
         description: description,
-        allocationDate: now,
         createdAt: now,
         createdBy: userId,
       );
@@ -560,16 +449,6 @@ class BudgetService {
     }
   }
 
-  // Allouer un budget à un projet (alias pour createAllocation)
-  Future<BudgetAllocation> allocateBudgetToProject(
-    String budgetId,
-    String projectId,
-    double amount,
-    String description,
-  ) async {
-    return createAllocation(budgetId, projectId, amount, description);
-  }
-
   // Mettre à jour une allocation de budget
   Future<void> updateAllocation(BudgetAllocation allocation) async {
     try {
@@ -580,7 +459,7 @@ class BudgetService {
       await _supabase
           .from('budget_allocations')
           .update(updatedAllocation.toJson())
-          .eq('id', allocation.id);
+          .filter('id', 'eq', allocation.id);
     } catch (e) {
       print('Erreur lors de la mise à jour de l\'allocation: $e');
       rethrow;
@@ -593,7 +472,7 @@ class BudgetService {
       await _supabase
           .from('budget_allocations')
           .delete()
-          .eq('id', allocationId);
+          .filter('id', 'eq', allocationId);
     } catch (e) {
       print('Erreur lors de la suppression de l\'allocation: $e');
       rethrow;
@@ -606,7 +485,7 @@ class BudgetService {
       final response = await _supabase
           .from('budget_allocations')
           .select()
-          .eq('id', allocationId)
+          .filter('id', 'eq', allocationId)
           .single();
 
       return BudgetAllocation.fromJson(response);

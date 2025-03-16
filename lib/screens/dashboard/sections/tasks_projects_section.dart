@@ -36,7 +36,7 @@ class TasksProjectsSection extends StatelessWidget {
       return Column(
         children: [
           SizedBox(
-            height: 230,
+            height: 215,
             child: Row(
               children: [
                 Expanded(
@@ -57,7 +57,7 @@ class TasksProjectsSection extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SizedBox(
-            height: 180,
+            height: 165,
             child: ProjectProgressChart(
               data: projectProgressData,
               title: 'Progression des projets',
@@ -67,7 +67,7 @@ class TasksProjectsSection extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SizedBox(
-            height: 200,
+            height: 185,
             child: TaskTimelineChart(
               data: upcomingTasksData,
               title: 'Tâches à venir',
@@ -82,7 +82,7 @@ class TasksProjectsSection extends StatelessWidget {
       return Column(
         children: [
           SizedBox(
-            height: 250,
+            height: 235,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -114,7 +114,7 @@ class TasksProjectsSection extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SizedBox(
-            height: 250,
+            height: 235,
             child: ProjectProgressChart(
               data: projectProgressData,
               title: 'Progression des projets',

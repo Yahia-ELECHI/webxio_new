@@ -21,12 +21,32 @@ class TeamService {
   // Équipes
   Future<List<Team>> getTeams() async {
     try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        return []; // Si utilisateur non connecté, retourner une liste vide
+      }
+      
+      // Récupérer les équipes dont l'utilisateur est membre
       final response = await _supabase
+          .from(_teamMembersTable)
+          .select('team_id')
+          .eq('user_id', user.id)
+          .eq('status', TeamMemberStatus.active.toValue());
+      
+      final teamIds = response.map<String>((json) => json['team_id'] as String).toList();
+      
+      if (teamIds.isEmpty) {
+        return [];
+      }
+      
+      // Récupérer les détails de ces équipes
+      final teamsResponse = await _supabase
           .from(_teamsTable)
           .select()
+          .inFilter('id', teamIds)
           .order('name');
       
-      return response.map<Team>((json) => Team.fromJson(json)).toList();
+      return teamsResponse.map<Team>((json) => Team.fromJson(json)).toList();
     } catch (e) {
       print('Erreur lors de la récupération des équipes: $e');
       rethrow;
@@ -207,6 +227,25 @@ class TeamService {
 
   Future<List<Team>> getTeamsByProject(String projectId) async {
     try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        return []; // Si utilisateur non connecté, retourner une liste vide
+      }
+
+      // Récupérer les équipes dont l'utilisateur est membre
+      final userTeamsResponse = await _supabase
+          .from(_teamMembersTable)
+          .select('team_id')
+          .eq('user_id', user.id)
+          .eq('status', TeamMemberStatus.active.toValue());
+      
+      final userTeamIds = userTeamsResponse.map<String>((json) => json['team_id'] as String).toList();
+      
+      if (userTeamIds.isEmpty) {
+        return [];
+      }
+      
+      // Récupérer les équipes associées au projet
       final response = await _supabase
           .from(_teamProjectsTable)
           .select('team_id')
@@ -218,10 +257,17 @@ class TeamService {
         return [];
       }
       
+      // Ne garder que les équipes dont l'utilisateur est membre
+      final filteredTeamIds = teamIds.where((id) => userTeamIds.contains(id)).toList();
+      
+      if (filteredTeamIds.isEmpty) {
+        return [];
+      }
+      
       final teamsResponse = await _supabase
           .from(_teamsTable)
           .select()
-          .inFilter('id', teamIds);
+          .inFilter('id', filteredTeamIds);
       
       return teamsResponse.map<Team>((json) => Team.fromJson(json)).toList();
     } catch (e) {
@@ -273,6 +319,25 @@ class TeamService {
   // Tâches d'équipe
   Future<List<Team>> getTeamsByTask(String taskId) async {
     try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        return []; // Si utilisateur non connecté, retourner une liste vide
+      }
+
+      // Récupérer les équipes dont l'utilisateur est membre
+      final userTeamsResponse = await _supabase
+          .from(_teamMembersTable)
+          .select('team_id')
+          .eq('user_id', user.id)
+          .eq('status', TeamMemberStatus.active.toValue());
+      
+      final userTeamIds = userTeamsResponse.map<String>((json) => json['team_id'] as String).toList();
+      
+      if (userTeamIds.isEmpty) {
+        return [];
+      }
+      
+      // Récupérer les équipes associées à la tâche
       final teamTasksData = await _supabase
           .from(_teamTasksTable)
           .select('team_id')
@@ -283,11 +348,18 @@ class TeamService {
       }
 
       final teamIds = teamTasksData.map<String>((item) => item['team_id'] as String).toList();
+      
+      // Ne garder que les équipes dont l'utilisateur est membre
+      final filteredTeamIds = teamIds.where((id) => userTeamIds.contains(id)).toList();
+      
+      if (filteredTeamIds.isEmpty) {
+        return [];
+      }
 
       final teamsData = await _supabase
           .from(_teamsTable)
           .select()
-          .inFilter('id', teamIds);
+          .inFilter('id', filteredTeamIds);
 
       return teamsData.map<Team>((item) => Team.fromJson(item)).toList();
     } catch (e) {
@@ -924,6 +996,59 @@ class TeamService {
       return uniqueMembers;
     } catch (e) {
       print('Erreur lors de la récupération des membres des équipes: $e');
+      rethrow;
+    }
+  }
+
+  // Vérifier les équipes où l'utilisateur est administrateur
+  Future<List<Team>> getUserAdminTeams(String userId) async {
+    try {
+      // 1. Récupérer les équipes où l'utilisateur est administrateur
+      final adminTeamIdsResponse = await _supabase
+          .from(_teamMembersTable)
+          .select('team_id')
+          .eq('user_id', userId)
+          .eq('role', TeamMemberRole.admin.toValue())
+          .eq('status', TeamMemberStatus.active.toValue());
+      
+      final adminTeamIds = adminTeamIdsResponse
+          .map<String>((json) => json['team_id'] as String)
+          .toList();
+      
+      if (adminTeamIds.isEmpty) {
+        return [];
+      }
+      
+      // 2. Récupérer les détails de ces équipes
+      final teamsResponse = await _supabase
+          .from(_teamsTable)
+          .select()
+          .inFilter('id', adminTeamIds);
+      
+      return teamsResponse.map<Team>((json) => Team.fromJson(json)).toList();
+    } catch (e) {
+      print('Erreur lors de la récupération des équipes d\'administration: $e');
+      rethrow;
+    }
+  }
+
+  // Récupérer tous les membres d'équipe pour un utilisateur
+  Future<List<TeamMember>> getUserTeamMemberships(String userId) async {
+    try {
+      final response = await _supabase
+          .from(_teamMembersTable)
+          .select('*, teams:team_id(name)')
+          .eq('user_id', userId);
+      
+      return response.map<TeamMember>((json) {
+        final teamInfo = json['teams'] as Map<String, dynamic>?;
+        return TeamMember.fromJson({
+          ...json,
+          'team_name': teamInfo?['name'],
+        });
+      }).toList();
+    } catch (e) {
+      print('Erreur lors de la récupération des membres d\'équipe pour l\'utilisateur: $e');
       rethrow;
     }
   }

@@ -262,42 +262,26 @@ class BudgetService {
         return [];
       }
       
-      // Récupérer les budgets liés à ces projets via les allocations individuellement
-      List<String> budgetIds = [];
-      for (final projectId in projectIds) {
-        final response = await _supabase
-            .from('budget_allocations')
-            .select('budget_id')
-            .eq('project_id', projectId);
-            
-        for (final item in response) {
-          final budgetId = item['budget_id'] as String;
-          if (!budgetIds.contains(budgetId)) {
-            budgetIds.add(budgetId);
-          }
-        }
-      }
+      // Récupérer les budgets liés à ces projets via les allocations
+      final allocationsResponse = await _supabase
+          .from('budget_allocations')
+          .select('budget_id')
+          .in('project_id', projectIds);
+      
+      final budgetIds = allocationsResponse.map<String>((json) => json['budget_id'] as String).toList();
       
       if (budgetIds.isEmpty) {
         return [];
       }
       
-      // Récupérer les détails des budgets individuellement
-      List<Budget> budgets = [];
-      for (final budgetId in budgetIds) {
-        final response = await _supabase
-            .from('budgets')
-            .select()
-            .eq('id', budgetId)
-            .single();
-            
-        budgets.add(Budget.fromJson(response));
-      }
+      // Récupérer les détails des budgets
+      final budgetsResponse = await _supabase
+          .from('budgets')
+          .select()
+          .in('id', budgetIds)
+          .order('start_date', ascending: false);
       
-      // Trier les budgets par date
-      budgets.sort((a, b) => b.startDate.compareTo(a.startDate));
-      
-      return budgets;
+      return budgetsResponse.map<Budget>((json) => Budget.fromJson(json)).toList();
     } catch (e) {
       print('Erreur lors de la récupération des budgets de l\'équipe: $e');
       rethrow;
@@ -319,19 +303,14 @@ class BudgetService {
         return [];
       }
       
-      // Récupérer les transactions liées à ces projets individuellement
-      List<BudgetTransaction> transactions = [];
-      for (final projectId in projectIds) {
-        final response = await _supabase
-            .from('budget_transactions')
-            .select()
-            .eq('project_id', projectId)
-            .order('transaction_date', ascending: false);
-            
-        transactions.addAll(response.map<BudgetTransaction>((json) => BudgetTransaction.fromJson(json)).toList());
-      }
+      // Récupérer les transactions liées à ces projets
+      final transactionsResponse = await _supabase
+          .from('budget_transactions')
+          .select()
+          .in('project_id', projectIds)
+          .order('transaction_date', ascending: false);
       
-      return transactions;
+      return transactionsResponse.map<BudgetTransaction>((json) => BudgetTransaction.fromJson(json)).toList();
     } catch (e) {
       print('Erreur lors de la récupération des transactions de l\'équipe: $e');
       rethrow;

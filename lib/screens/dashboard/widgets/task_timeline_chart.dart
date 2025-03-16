@@ -49,7 +49,7 @@ class TaskTimelineChart extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Expanded(
               child: sortedData.isEmpty
                   ? Center(
@@ -83,6 +83,8 @@ class TaskTimelineChart extends StatelessWidget {
     }
     
     return ListView.builder(
+      padding: EdgeInsets.zero,
+      shrinkWrap: true,
       itemCount: tasksByDay.length,
       itemBuilder: (context, index) {
         final dateKey = tasksByDay.keys.elementAt(index);
@@ -140,7 +142,7 @@ class TaskTimelineChart extends StatelessWidget {
       onTap: onTaskTap != null ? () => onTaskTap!(task.taskId) : null,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 4.0),
+        padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 4.0),
         child: Row(
           children: [
             Container(
@@ -151,7 +153,7 @@ class TaskTimelineChart extends StatelessWidget {
                 color: priorityColor,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,11 +167,11 @@ class TaskTimelineChart extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                         decoration: BoxDecoration(
                           color: _getStatusColor(task.status).withOpacity(0.2),
                           borderRadius: BorderRadius.circular(4),
@@ -183,7 +185,7 @@ class TaskTimelineChart extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 4),
                       Icon(
                         Icons.access_time,
                         size: 12,

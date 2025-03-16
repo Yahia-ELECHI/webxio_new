@@ -479,7 +479,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // Section des tâches et projets
                     SizedBox(
-                      height: 600, // Hauteur fixe pour cette section
+                      height: 598, // Hauteur ajustée
                       child: TasksProjectsSection(
                         tasksByStatusData: _tasksByStatusData,
                         tasksByPriorityData: _tasksByPriorityData,
@@ -492,11 +492,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 30),
                     
                     // Section des phases
                     SizedBox(
-                      height: 400, // Hauteur fixe pour cette section
+                      height: 300, // Hauteur ajustée
                       child: PhasesSection(
                         phaseProgressData: _phaseProgressData,
                         onSeeAllPhases: _navigateToPhasesList,
@@ -508,7 +508,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // Section budget et finances
                     SizedBox(
-                      height: 600, // Hauteur fixe pour cette section
+                      height: 560, // Hauteur ajustée
                       child: BudgetFinanceSection(
                         budgetOverviewData: _budgetOverviewData,
                         recentTransactionsData: _recentTransactionsData,
@@ -693,7 +693,7 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                             widget.value,
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 18,
+                              fontSize: 15,
                             ),
                           ),
                         ],

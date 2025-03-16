@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/budget_model.dart';
 import '../../models/budget_transaction_model.dart';
 import '../../models/project_model.dart';
 import '../../models/phase_model.dart';
+import '../../models/team_model.dart';
 import '../../services/budget_service.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/phase_service/phase_service.dart';
+import '../../services/team_service/team_service.dart';
 import '../projects/project_detail_screen.dart'; // Importer l'écran de détail du projet depuis le bon chemin
 import 'budget_form_screen.dart';
 import 'transaction_form_screen.dart';
@@ -24,6 +27,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
   final BudgetService _budgetService = BudgetService();
   final ProjectService _projectService = ProjectService();
   final PhaseService _phaseService = PhaseService();
+  final TeamService _teamService = TeamService();
   
   late TabController _tabController;
   
@@ -32,6 +36,30 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
   List<BudgetTransaction> _recentTransactions = [];
   List<Project> _projects = [];
   List<Project> _projectsWithBudgetAlert = [];
+  
+  // États pour les équipes et visualisation des finances d'équipe
+  bool _isAdmin = false;
+  List<Team> _adminTeams = [];
+  String? _selectedTeamId;
+  bool _showTeamFinances = false;
+  
+  // Obtenir le nom de l'équipe sélectionnée
+  String get _selectedTeamName {
+    if (_selectedTeamId == null || _adminTeams.isEmpty) {
+      return "";
+    }
+    
+    final selectedTeam = _adminTeams.firstWhere(
+      (team) => team.id == _selectedTeamId,
+      orElse: () => Team(
+        name: "Équipe inconnue",
+        createdAt: DateTime.now(),
+        createdBy: "",
+      ),
+    );
+    
+    return selectedTeam.name;
+  }
   
   // États pour les graphiques interactifs
   int? _touchedExpenseIndex;
@@ -65,15 +93,31 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     });
     
     try {
-      // Charger les budgets
-      final budgets = await _budgetService.getAllBudgets();
+      final userId = _budgetService.supabaseClient.auth.currentUser!.id;
+      
+      // Vérifier si l'utilisateur est administrateur d'une équipe
+      final adminTeams = await _teamService.getUserAdminTeams(userId);
+      final isAdmin = adminTeams.isNotEmpty;
+      
+      // Charger les budgets selon le contexte (personnel ou équipe)
+      List<Budget> budgets;
+      List<BudgetTransaction> transactions;
+      
+      if (_showTeamFinances && isAdmin && _selectedTeamId != null) {
+        // Charger les budgets de l'équipe sélectionnée
+        budgets = await _budgetService.getTeamBudgets(_selectedTeamId!);
+        transactions = await _budgetService.getTeamTransactions(_selectedTeamId!);
+      } else {
+        // Charger les budgets personnels de l'utilisateur
+        budgets = await _budgetService.getAllBudgets();
+        transactions = await _budgetService.getAllTransactions();
+      }
+      
+      // Extraire les transactions récentes (les 20 dernières)
+      final recentTransactions = transactions.take(20).toList();
       
       // Charger les projets
       final projects = await _projectService.getAllProjects();
-      
-      // Charger les transactions récentes (les 20 dernières)
-      final transactions = await _budgetService.getAllTransactions();
-      final recentTransactions = transactions.take(20).toList();
       
       // Trouver les projets avec dépassement de budget (alerte)
       final projectsWithAlert = projects.where((project) {
@@ -111,6 +155,8 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
       print('Vérification totalRemaining: $totalRemaining vs totalCurrentAmount: $totalCurrentAmount');
       
       setState(() {
+        _isAdmin = isAdmin;
+        _adminTeams = adminTeams;
         _budgets = budgets;
         _projects = projects;
         _recentTransactions = recentTransactions;
@@ -142,33 +188,81 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tableau de bord financier'),
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(_isAdmin && _showTeamFinances && _selectedTeamId != null ? 85 : 48),
+          child: Column(
+            children: [
+              // Afficher le badge d'équipe si nécessaire
+              if (_isAdmin && _showTeamFinances && _selectedTeamId != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  color: Theme.of(context).primaryColor,
+                  child: Wrap(
+                    alignment: WrapAlignment.start,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text(
+                        'Équipe : ',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Chip(
+                        label: Text(
+                          _selectedTeamName,
+                          style: const TextStyle(
+                            fontSize: 12, 
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        backgroundColor: Colors.blue.shade700,
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ],
+                  ),
+                ),
+              // TabBar pour la navigation
+              TabBar(
+                controller: _tabController,
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white70,
+                indicatorColor: Colors.white,
+                indicatorWeight: 3.0,
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.0,
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontWeight: FontWeight.normal,
+                  fontSize: 14.0,
+                ),
+                tabs: const [
+                  Tab(text: 'Vue d\'ensemble'),
+                  Tab(text: 'Projets'),
+                  Tab(text: 'Alertes'),
+                ],
+              ),
+            ],
+          ),
+        ),
         actions: [
+          // Affichage du sélecteur d'équipe uniquement pour les administrateurs
+          if (_isAdmin) 
+            IconButton(
+              icon: Icon(_showTeamFinances ? Icons.people_alt : Icons.people_outline),
+              onPressed: _showTeamSelector,
+              tooltip: 'Gérer les finances d\'équipe',
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
             tooltip: 'Actualiser',
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          indicatorWeight: 3.0,
-          labelStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14.0,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontWeight: FontWeight.normal,
-            fontSize: 14.0,
-          ),
-          tabs: const [
-            Tab(text: 'Vue d\'ensemble'),
-            Tab(text: 'Projets'),
-            Tab(text: 'Alertes'),
-          ],
-        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
@@ -196,6 +290,80 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                 _buildAlertsTab(),
               ],
             ),
+    );
+  }
+  
+  void _showTeamSelector() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Choix des données financières',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              title: const Text('Voir mes finances personnelles'),
+              leading: const Icon(Icons.person),
+              onTap: () {
+                setState(() {
+                  _showTeamFinances = false;
+                  _selectedTeamId = null;
+                });
+                Navigator.pop(context);
+                _loadData();
+              },
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.people, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Mes équipes',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Liste des équipes
+            ..._adminTeams.map((team) => ListTile(
+              title: Text(team.name),
+              leading: const Icon(Icons.group_work),
+              trailing: _selectedTeamId == team.id && _showTeamFinances
+                  ? const Icon(Icons.check_circle, color: Colors.green)
+                  : null,
+              onTap: () {
+                setState(() {
+                  _showTeamFinances = true;
+                  _selectedTeamId = team.id;
+                });
+                Navigator.pop(context);
+                _loadData();
+              },
+            )).toList(),
+          ],
+        );
+      },
     );
   }
   

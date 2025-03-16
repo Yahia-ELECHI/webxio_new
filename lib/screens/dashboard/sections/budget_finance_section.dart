@@ -23,7 +23,7 @@ class BudgetFinanceSection extends StatelessWidget {
     return Column(
       children: [
         SizedBox(
-          height: 280,
+          height: 265,
           child: BudgetOverviewChart(
             data: budgetOverviewData,
             title: 'Aperçu des budgets',
@@ -32,7 +32,7 @@ class BudgetFinanceSection extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         SizedBox(
-          height: 280,
+          height: 265,
           child: _buildRecentTransactionsCard(),
         ),
       ],
