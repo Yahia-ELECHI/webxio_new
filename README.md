@@ -7,7 +7,36 @@ Une application mobile Flutter pour la gestion de projets et de tâches, avec au
 - Authentification des utilisateurs (connexion, inscription)
 - Gestion des projets (création, modification, suppression)
 - Gestion des tâches (création, modification, suppression, changement de statut)
+- Système de phases pour les projets (non démarré, en cours, terminé, en attente, annulé)
+- Système complet de notifications pour les événements clés (projets, phases, tâches)
+- Gestion des budgets avec alertes automatiques
 - Stockage des données dans Supabase
+
+## Système de Phases
+
+Chaque projet peut avoir plusieurs phases, permettant une organisation plus structurée :
+- Phases ordonnées avec un statut (non démarré, en cours, terminé, en attente, annulé)
+- Chaque phase peut contenir plusieurs tâches
+- Les tâches peuvent être associées à une phase spécifique
+
+## Système de Notifications
+
+L'application intègre un système complet de notifications couvrant les événements suivants :
+
+1. Projets :
+   - Création de projet
+   - Changement de statut de projet
+   - Alertes de budget (à 70%, 90% et 100% du budget alloué)
+
+2. Phases :
+   - Création de phase
+   - Changement de statut de phase
+
+3. Tâches :
+   - Assignation de tâche
+   - Échéance proche (7 jours, 3 jours, 1 jour)
+   - Tâche en retard
+   - Changement de statut
 
 ## Configuration de Supabase
 
@@ -15,8 +44,22 @@ Pour configurer la base de données Supabase, suivez ces étapes :
 
 1. Connectez-vous à l'interface d'administration de Supabase : https://qxjxzbmihbapoeaebdvk.supabase.co
 2. Allez dans l'onglet "SQL Editor"
-3. Copiez et collez le contenu du fichier `supabase/setup_complete.sql`
-4. Exécutez le script SQL pour créer les tables et les politiques de sécurité
+3. Copiez et collez le contenu du fichier `supabase/schema_complete.sql`
+4. Exécutez le script SQL pour créer toutes les tables et les politiques de sécurité
+
+Alternativement, si vous avez la CLI Supabase installée, vous pouvez appliquer les migrations directement :
+
+```bash
+# Installation de la CLI Supabase (si nécessaire)
+npm install -g supabase
+
+# Connexion à votre projet
+supabase login
+supabase link --project-ref qxjxzbmihbapoeaebdvk
+
+# Application des migrations
+supabase db push
+```
 
 Pour créer un utilisateur de test et des données de test, exécutez :
 
@@ -38,11 +81,22 @@ dart run lib/scripts/create_test_user_direct.dart
 
 ## Structure du projet
 
-- `lib/models/` : Modèles de données (Project, Task)
+- `lib/models/` : Modèles de données (Project, Task, Phase, Notification, etc.)
 - `lib/services/` : Services pour interagir avec Supabase
+  - `project_service/` : Services liés aux projets
+  - `task_service/` : Services liés aux tâches
+  - `phase_service/` : Services liés aux phases
+  - `notification_service.dart` : Service de gestion des notifications
+  - `budget_service.dart` : Service de gestion des budgets
 - `lib/screens/` : Écrans de l'application
   - `auth/` : Écrans d'authentification
   - `projects/` : Écrans de gestion des projets
   - `tasks/` : Écrans de gestion des tâches
+  - `dashboard/` : Tableau de bord principal
+  - `budget/` : Écrans de gestion des budgets
+  - `calendar/` : Vue calendrier
+  - `notifications/` : Écrans de gestion des notifications
 - `lib/scripts/` : Scripts utilitaires pour la configuration de Supabase
 - `supabase/` : Scripts SQL pour la configuration de Supabase
+  - `migrations/` : Fichiers de migration pour les modifications de schéma
+  - `schema_complete.sql` : Schéma complet de la base de données
