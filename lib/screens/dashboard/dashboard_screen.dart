@@ -508,9 +508,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // Section budget et finances
                     SizedBox(
-                      height: 560, // Hauteur ajustée
+                      height: 1200, // Hauteur augmentée pour la section budget
                       child: BudgetFinanceSection(
-                        budgetOverviewData: _budgetOverviewData,
                         recentTransactionsData: _recentTransactionsData,
                         onSeeAllBudget: _navigateToBudgetScreen,
                         onSeeAllTransactions: _navigateToTransactions,

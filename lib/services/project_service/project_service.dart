@@ -4,6 +4,7 @@ import '../../models/project_model.dart';
 import '../../models/task_model.dart';
 import '../../models/task_history_model.dart';
 import '../../models/phase_model.dart';
+import '../notification_service.dart';
 
 class ProjectService {
   final SupabaseClient _client = SupabaseConfig.client;
@@ -11,6 +12,7 @@ class ProjectService {
   final String _tasksTable = 'tasks';
   final String _phasesTable = 'phases';
   final String _taskHistoryTable = 'task_history';
+  final NotificationService _notificationService = NotificationService();
 
   // Récupérer tous les projets
   Future<List<Project>> getAllProjects() async {
@@ -100,7 +102,12 @@ class ProjectService {
           .select()
           .single();
       
-      return Project.fromJson(response);
+      final createdProject = Project.fromJson(response);
+      
+      // Envoyer une notification pour la création du projet
+      await _notifyProjectCreation(createdProject);
+      
+      return createdProject;
     } catch (e) {
       print('Erreur lors de la création du projet: $e');
       rethrow;
@@ -110,6 +117,14 @@ class ProjectService {
   // Mettre à jour un projet
   Future<Project> updateProject(Project project) async {
     try {
+      // Récupérer l'ancien projet pour comparer le statut
+      Project? oldProject;
+      try {
+        oldProject = await getProjectById(project.id);
+      } catch (e) {
+        print('Impossible de récupérer l\'ancien projet: $e');
+      }
+      
       final response = await _client
           .from(_projectsTable)
           .update(project.toJson())
@@ -117,7 +132,43 @@ class ProjectService {
           .select()
           .single();
       
-      return Project.fromJson(response);
+      final updatedProject = Project.fromJson(response);
+      
+      // Vérifier si le statut a changé
+      if (oldProject != null && oldProject.status != updatedProject.status) {
+        // Si le statut est terminé, en attente ou annulé, envoyer une notification
+        if (updatedProject.status == 'completed' || 
+            updatedProject.status == 'onHold' || 
+            updatedProject.status == 'cancelled') {
+          await _notifyProjectStatusChange(updatedProject);
+        }
+      }
+      
+      // Vérifier si le budget a changé
+      if (oldProject != null && 
+          updatedProject.budgetAllocated != null && 
+          updatedProject.budgetAllocated! > 0 && 
+          updatedProject.budgetConsumed != null) {
+        
+        final percentage = (updatedProject.budgetConsumed! / updatedProject.budgetAllocated!) * 100;
+        
+        // Vérifier si nous avons dépassé des seuils importants (70%, 90%, 100%)
+        if (percentage >= 70) {
+          // Vérifier si nous avons franchi un nouveau seuil
+          final oldPercentage = oldProject.budgetConsumed != null && oldProject.budgetAllocated != null && oldProject.budgetAllocated! > 0
+              ? (oldProject.budgetConsumed! / oldProject.budgetAllocated!) * 100
+              : 0;
+          
+          // Envoyer une notification si nous franchissons un nouveau seuil
+          if ((oldPercentage < 70 && percentage >= 70) || 
+              (oldPercentage < 90 && percentage >= 90) || 
+              (oldPercentage < 100 && percentage >= 100)) {
+            await _notifyProjectBudgetAlert(updatedProject, percentage);
+          }
+        }
+      }
+      
+      return updatedProject;
     } catch (e) {
       print('Erreur lors de la mise à jour du projet: $e');
       rethrow;
@@ -493,7 +544,8 @@ class ProjectService {
       final project = await getProjectById(projectId);
       
       // Calculer le nouveau montant consommé
-      final double newBudgetConsumed = (project.budgetConsumed ?? 0) + amount;
+      final double oldBudgetConsumed = project.budgetConsumed ?? 0;
+      final double newBudgetConsumed = oldBudgetConsumed + amount;
       
       // Mettre à jour le projet
       final updatedProject = project.copyWith(
@@ -501,7 +553,22 @@ class ProjectService {
         updatedAt: DateTime.now().toUtc(),
       );
       
-      return await updateProject(updatedProject);
+      final result = await updateProject(updatedProject);
+      
+      // Vérifier si le budget a dépassé un seuil
+      if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
+        final oldPercentage = (oldBudgetConsumed / project.budgetAllocated!) * 100;
+        final newPercentage = (newBudgetConsumed / project.budgetAllocated!) * 100;
+        
+        // Envoyer une notification si nous franchissons un nouveau seuil
+        if ((oldPercentage < 70 && newPercentage >= 70) || 
+            (oldPercentage < 90 && newPercentage >= 90) || 
+            (oldPercentage < 100 && newPercentage >= 100)) {
+          await _notifyProjectBudgetAlert(updatedProject, newPercentage);
+        }
+      }
+      
+      return result;
     } catch (e) {
       print('Erreur lors de la mise à jour du budget consommé: $e');
       rethrow;
@@ -563,6 +630,125 @@ class ProjectService {
     } catch (e) {
       print('Erreur lors de la récupération des statistiques budgétaires: $e');
       rethrow;
+    }
+  }
+
+  // Méthodes privées pour les notifications
+  
+  // Envoyer des notifications pour la création d'un projet
+  Future<void> _notifyProjectCreation(Project project) async {
+    try {
+      // Récupérer le créateur du projet
+      final creatorId = project.createdBy;
+      
+      // Récupérer les membres de l'équipe associés au projet
+      final teamMembers = await getProjectTeamMembers(project.id);
+      
+      // S'assurer que le créateur est inclus
+      if (!teamMembers.contains(creatorId)) {
+        teamMembers.add(creatorId);
+      }
+      
+      // Créer les notifications
+      await _notificationService.createProjectNotification(
+        project.id,
+        project.name,
+        teamMembers,
+      );
+    } catch (e) {
+      print('Erreur lors de l\'envoi des notifications de création de projet: $e');
+    }
+  }
+  
+  // Envoyer des notifications pour un changement de statut de projet
+  Future<void> _notifyProjectStatusChange(Project project) async {
+    try {
+      // Récupérer les membres de l'équipe associés au projet
+      final teamMembers = await getProjectTeamMembers(project.id);
+      
+      // Créer les notifications
+      await _notificationService.createProjectStatusNotification(
+        project.id,
+        project.name,
+        project.status,
+        teamMembers,
+      );
+    } catch (e) {
+      print('Erreur lors de l\'envoi des notifications de changement de statut: $e');
+    }
+  }
+  
+  // Envoyer des notifications pour une alerte de budget
+  Future<void> _notifyProjectBudgetAlert(Project project, double percentage) async {
+    try {
+      // Récupérer les membres de l'équipe associés au projet
+      final teamMembers = await getProjectTeamMembers(project.id);
+      
+      // Créer les notifications
+      await _notificationService.createProjectBudgetAlert(
+        project.id,
+        project.name,
+        percentage,
+        teamMembers,
+      );
+    } catch (e) {
+      print('Erreur lors de l\'envoi des notifications d\'alerte de budget: $e');
+    }
+  }
+  
+  // Récupérer les membres d'un projet
+  Future<List<String>> getProjectTeamMembers(String projectId) async {
+    try {
+      // Récupérer les équipes associées au projet
+      final teamsResponse = await _client
+          .from('team_projects')
+          .select('team_id')
+          .eq('project_id', projectId);
+      
+      // Si aucune équipe n'est associée, retourner uniquement le créateur
+      if (teamsResponse.isEmpty) {
+        final projectResponse = await _client
+            .from(_projectsTable)
+            .select('created_by')
+            .eq('id', projectId)
+            .single();
+        
+        return [projectResponse['created_by']];
+      }
+      
+      // Pour chaque équipe, récupérer les membres
+      final List<String> allTeamMembers = [];
+      
+      for (final team in teamsResponse) {
+        final teamId = team['team_id'];
+        final teamMembersResponse = await _client
+            .from('team_members')
+            .select('user_id')
+            .eq('team_id', teamId)
+            .eq('status', 'active');
+        
+        for (final member in teamMembersResponse) {
+          allTeamMembers.add(member['user_id']);
+        }
+      }
+      
+      // Ajouter également le créateur du projet s'il n'est pas déjà inclus
+      final projectResponse = await _client
+          .from(_projectsTable)
+          .select('created_by')
+          .eq('id', projectId)
+          .single();
+      
+      final creatorId = projectResponse['created_by'];
+      if (!allTeamMembers.contains(creatorId)) {
+        allTeamMembers.add(creatorId);
+      }
+      
+      // Retourner une liste de membres uniques
+      return allTeamMembers.toSet().toList();
+    } catch (e) {
+      print('Erreur lors de la récupération des membres du projet: $e');
+      return [];
     }
   }
 }

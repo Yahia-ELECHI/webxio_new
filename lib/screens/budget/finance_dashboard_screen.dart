@@ -41,7 +41,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
   bool _isAdmin = false;
   List<Team> _adminTeams = [];
   String? _selectedTeamId;
-  bool _showTeamFinances = false;
+  bool _showTeamFinances = true; // Changé de false à true pour afficher la vue équipe par défaut
   
   // Obtenir le nom de l'équipe sélectionnée
   String get _selectedTeamName {
@@ -99,6 +99,24 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
       final adminTeams = await _teamService.getUserAdminTeams(userId);
       final isAdmin = adminTeams.isNotEmpty;
       
+      // Mise à jour des équipes admin de l'utilisateur
+      setState(() {
+        _adminTeams = adminTeams;
+        _isAdmin = isAdmin;
+      });
+      
+      // Sélectionner automatiquement la première équipe si aucune n'est sélectionnée
+      // et que l'utilisateur est admin d'au moins une équipe
+      if (_selectedTeamId == null && isAdmin && adminTeams.isNotEmpty) {
+        _selectedTeamId = adminTeams.first.id;
+      }
+      
+      // Si l'utilisateur n'est pas admin ou n'a pas d'équipes, revenir à la vue personnelle
+      if (!isAdmin || adminTeams.isEmpty) {
+        _showTeamFinances = false;
+        _selectedTeamId = null;
+      }
+      
       // Charger les budgets selon le contexte (personnel ou équipe)
       List<Budget> budgets;
       List<BudgetTransaction> transactions;
@@ -112,6 +130,21 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
         budgets = await _budgetService.getAllBudgets();
         transactions = await _budgetService.getAllTransactions();
       }
+      
+      // Analyser toutes les transactions pour trouver les allocations
+      print('--- ANALYSE DES TRANSACTIONS ---');
+      for (var t in transactions) {
+        if (t.amount > 0 && (t.description?.toLowerCase().contains('allocation') ?? false)) {
+          print('Transaction potentielle d\'allocation: ${t.id}');
+          print('  Montant: ${t.amount} €');
+          print('  Description: ${t.description}');
+          print('  Catégorie: ${t.category}');
+          print('  Sous-catégorie: ${t.subcategory}');
+          print('  Budget ID: ${t.budgetId}');
+          print('  Projet ID: ${t.projectId}');
+        }
+      }
+      print('--- FIN ANALYSE ---');
       
       // Extraire les transactions récentes (les 20 dernières)
       final recentTransactions = transactions.take(20).toList();
@@ -144,7 +177,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
       
       // Calculer les statistiques financières
       // Méthode 1: Calcul basé sur les current_amount des budgets et les transactions
-      final totalInitialBudget = budgets.fold(0.0, (sum, budget) => sum + budget.initialAmount);
+      final totalInitialBudget = budgets.fold(0.0, (sum, budget) => sum + budget.currentAmount);
       final totalIncomeTransactions = transactions.where((t) => t.amount > 0).fold(0.0, (sum, t) => sum + t.amount);
       final totalBudget = totalInitialBudget + totalIncomeTransactions;
       final totalSpent = transactions.where((t) => t.amount < 0).fold(0.0, (sum, t) => sum + t.amount.abs());
@@ -155,8 +188,6 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
       print('Vérification totalRemaining: $totalRemaining vs totalCurrentAmount: $totalCurrentAmount');
       
       setState(() {
-        _isAdmin = isAdmin;
-        _adminTeams = adminTeams;
         _budgets = budgets;
         _projects = projects;
         _recentTransactions = recentTransactions;
@@ -820,7 +851,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     final Map<String, double> incomesByCategory = {};
     
     // Ajouter le budget initial comme une catégorie
-    double totalInitial = _budgets.fold(0.0, (sum, budget) => sum + budget.initialAmount);
+    double totalInitial = _budgets.fold(0.0, (sum, budget) => sum + budget.currentAmount);
     if (totalInitial > 0) {
       incomesByCategory['Budget initial'] = totalInitial;
     }
@@ -1053,18 +1084,40 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
   Widget _buildBudgetItem(Budget budget) {
     final NumberFormat currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
     
+    // Afficher des informations sur le budget pour le débogage
+    print('Débogage budget ${budget.name} (id: ${budget.id}):');
+    print('- Current amount: ${budget.currentAmount}');
+    print('- Initial amount: ${budget.initialAmount}');
+    
     // Calculer le montant des entrées d'argent sur ce budget
     final income = _recentTransactions
-        .where((t) => t.budgetId == budget.id && t.amount > 0)
+        .where((t) => t.budgetId == budget.id && t.amount > 0 && t.subcategory != 'Allocation')
         .fold(0.0, (sum, t) => sum + t.amount);
+    
+    // Calculer les allocations spécifiquement
+    // Pour les allocations, on cherche les transactions où la description contient le nom du budget
+    // car les allocations sont liées aux projets, pas aux budgets
+    final allocations = _recentTransactions
+        .where((t) => 
+          t.amount > 0 && 
+          t.subcategory == 'Allocation' && 
+          (t.description?.contains(budget.name) ?? false))
+        .fold(0.0, (sum, t) => sum + t.amount);
+    
+    print('- Revenus (hors allocations): $income €');
+    print('- Allocations liées au nom "${budget.name}": $allocations €');
     
     // Calculer le montant consommé sur ce budget
     final consumed = _recentTransactions
         .where((t) => t.budgetId == budget.id && t.amount < 0)
         .fold(0.0, (sum, t) => sum + t.amount.abs());
     
-    // Budget total = initial + entrées
-    final totalBudget = budget.initialAmount + income;
+    print('- Dépenses: $consumed €');
+    
+    // Budget total = courant + entrées + allocations
+    final totalBudget = budget.currentAmount + income + allocations;
+    
+    print('- Budget total calculé: $totalBudget €');
     
     // Calculer le pourcentage d'utilisation
     final percentage = totalBudget > 0 
@@ -1174,7 +1227,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     }
     
     // Recalculer le budget total en incluant les entrées
-    final totalBudget = (project.budgetAllocated ?? 0) + projectIncome;
+    final totalBudget = projectIncome;
     
     // Calculer le montant restant (budget total - dépenses)
     final remainingBudget = totalBudget - projectExpenses;

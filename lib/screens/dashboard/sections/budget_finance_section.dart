@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import '../widgets/budget_overview_chart.dart';
+import '../widgets/cagnotte_webview.dart';
 import '../models/dashboard_chart_models.dart';
 
 class BudgetFinanceSection extends StatelessWidget {
-  final List<BudgetOverviewData> budgetOverviewData;
   final List<RecentTransactionData> recentTransactionsData;
   final VoidCallback? onSeeAllBudget;
   final VoidCallback? onSeeAllTransactions;
@@ -11,7 +10,6 @@ class BudgetFinanceSection extends StatelessWidget {
 
   const BudgetFinanceSection({
     Key? key,
-    required this.budgetOverviewData,
     required this.recentTransactionsData,
     this.onSeeAllBudget,
     this.onSeeAllTransactions,
@@ -23,10 +21,9 @@ class BudgetFinanceSection extends StatelessWidget {
     return Column(
       children: [
         SizedBox(
-          height: 265,
-          child: BudgetOverviewChart(
-            data: budgetOverviewData,
-            title: 'Aperçu des budgets',
+          height: 650, // Augmenter la hauteur pour donner plus d'espace à la WebView
+          child: CagnotteWebView(
+            title: 'Cagnotte en ligne',
             onSeeAllPressed: onSeeAllBudget,
           ),
         ),

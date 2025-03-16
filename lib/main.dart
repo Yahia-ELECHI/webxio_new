@@ -17,8 +17,10 @@ import 'screens/teams/teams_screen.dart';
 import 'screens/teams/invitations_screen.dart';
 import 'screens/teams/invitation_acceptance_screen.dart';
 import 'screens/budget/finance_dashboard_screen.dart';
+import 'screens/notifications/notifications_screen.dart';
 import 'widgets/sidebar_menu.dart';
 import 'widgets/islamic_patterns.dart';
+import 'widgets/notification_popup.dart';
 import 'services/auth_service.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:io';
@@ -189,6 +191,7 @@ class MyApp extends StatelessWidget {
         '/register': (context) => const RegisterScreen(),
         '/home': (context) => const MainAppScreen(),
         '/profile': (context) => const ProfileScreen(),
+        '/notifications': (context) => const NotificationsScreen(),
         '/invitation': (context) {
           // Récupérer les paramètres d'URL pour l'invitation
           final args = ModalRoute.of(context)!.settings.arguments as Map<String, String>?;
@@ -445,17 +448,9 @@ class _MainAppScreenState extends State<MainAppScreen> {
                 ],
               ),
               actions: [
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  onPressed: () {
-                    // Recherche
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.notifications),
-                  onPressed: () {
-                    // Notifications
-                  },
+                Padding(
+                  padding: const EdgeInsets.only(right: 25.0), // Ajouter de l'espace à droite
+                  child: NotificationIcon(),
                 ),
               ],
             )

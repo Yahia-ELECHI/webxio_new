@@ -132,7 +132,16 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
 
     try {
       final budgets = await _budgetService.getAllBudgets();
+      print('Budgets récupérés: ${budgets.length}');
+      
+      // Afficher les IDs et noms des budgets pour déboguer
+      for (var budget in budgets) {
+        print('Budget trouvé: ${budget.id} - ${budget.name} - créé par: ${budget.createdBy}');
+      }
+      
       final projects = await _projectService.getAllProjects();
+      print('Projets récupérés: ${projects.length}');
+      
       final phases = await _projectService.getAllPhases();
       final tasks = await _projectService.getAllTasks();
       
@@ -143,7 +152,16 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
         _tasks = tasks;
         _isLoading = false;
       });
+      
+      // Vérifier si _selectedBudgetId est dans la liste des budgets
+      if (_selectedBudgetId != null) {
+        bool budgetExists = _budgets.any((b) => b.id == _selectedBudgetId);
+        print('Budget sélectionné (${_selectedBudgetId}) existe dans la liste: $budgetExists');
+      } else {
+        print('Aucun budget sélectionné');
+      }
     } catch (e) {
+      print('Erreur lors du chargement des données: ${e.toString()}');
       SnackBarHelper.showErrorSnackBar(
         context, 
         'Erreur lors du chargement des données: ${e.toString()}'
@@ -448,13 +466,19 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                         prefixIcon: Icon(Icons.account_balance_wallet),
                       ),
                       value: _selectedBudgetId,
-                      items: _budgets.map((budget) {
-                        return DropdownMenuItem<String>(
-                          value: budget.id,
-                          child: Text(budget.name),
-                        );
-                      }).toList(),
+                      items: _budgets.isEmpty 
+                          ? [const DropdownMenuItem<String>(
+                              value: '',
+                              child: Text('Aucun budget disponible'),
+                            )]
+                          : _budgets.map((budget) {
+                              return DropdownMenuItem<String>(
+                                value: budget.id,
+                                child: Text('${budget.name} (${budget.id.substring(0, 4)}...)'),
+                              );
+                            }).toList(),
                       onChanged: (value) {
+                        print('Budget sélectionné: $value');
                         setState(() {
                           _selectedBudgetId = value;
                         });
@@ -465,6 +489,10 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                         }
                         return null;
                       },
+                      // Assurez-vous que le dropdown n'est jamais désactivé
+                      disabledHint: const Text('Chargement des budgets...'),
+                      isDense: true,
+                      isExpanded: true,
                     ),
                     const SizedBox(height: 16),
                     // Lié à un projet?

@@ -287,39 +287,51 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   // Liste des événements du jour sélectionné
                   Expanded(
                     child: _selectedEvents.isEmpty
-                        ? Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.event_busy,
-                                size: 48,
-                                color: Color(0xFF1F4E5F),
+                        ? SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minHeight: MediaQuery.of(context).size.height * 0.3,
                               ),
-                              const SizedBox(height: 16),
-                              Container(
-                                width: 120,
-                                height: 120,
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    IslamicPatternBackground(),
-                                  ],
-                                ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const SizedBox(height: 20),
+                                  Container(
+                                    width: 100,
+                                    height: 100,
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        IslamicPatternBackground(),
+                                        const Icon(
+                                          Icons.event_busy,
+                                          size: 36,
+                                          color: Color(0xFF1F4E5F),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Aucune tâche pour cette date',
+                                    style: Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                    child: Text(
+                                      'Sélectionnez une autre date ou ajoutez une nouvelle tâche',
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: Colors.grey[600],
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                ],
                               ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Aucune tâche pour cette date',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Sélectionnez une autre date ou ajoutez une nouvelle tâche',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Colors.grey[600],
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
+                            ),
                           )
                         : ListView.builder(
                             padding: EdgeInsets.symmetric(

@@ -1,10 +1,14 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/task_model.dart';
+import '../notification_service.dart';
+import '../project_service/project_service.dart';
 
 class TaskService {
   final _supabase = Supabase.instance.client;
   final _uuid = Uuid();
+  final NotificationService _notificationService = NotificationService();
+  final ProjectService _projectService = ProjectService();
 
   // Récupérer toutes les tâches d'un projet
   Future<List<Task>> getTasksByProject(String projectId) async {
@@ -107,6 +111,12 @@ class TaskService {
       );
 
       await _supabase.from('tasks').insert(task.toJson());
+      
+      // Si la tâche est assignée à quelqu'un, envoyer une notification
+      if (assignedTo != null && assignedTo.isNotEmpty) {
+        await _notifyTaskAssigned(task);
+      }
+      
       return task;
     } catch (e) {
       print('Erreur lors de la création de la tâche: $e');
@@ -117,6 +127,14 @@ class TaskService {
   // Mettre à jour une tâche
   Future<void> updateTask(Task task) async {
     try {
+      // Récupérer l'ancienne tâche pour comparer
+      Task? oldTask;
+      try {
+        oldTask = await getTaskById(task.id);
+      } catch (e) {
+        print('Impossible de récupérer l\'ancienne tâche: $e');
+      }
+      
       final updatedTask = task.copyWith(
         updatedAt: DateTime.now().toUtc(),
       );
@@ -125,6 +143,23 @@ class TaskService {
           .from('tasks')
           .update(updatedTask.toJson())
           .eq('id', task.id);
+      
+      if (oldTask != null) {
+        // Vérifier si le statut a changé
+        if (oldTask.status != updatedTask.status) {
+          await _notifyTaskStatusChange(updatedTask, _supabase.auth.currentUser!.id);
+        }
+        
+        // Vérifier si l'assignation a changé
+        if (oldTask.assignedTo != updatedTask.assignedTo && updatedTask.assignedTo != null && updatedTask.assignedTo!.isNotEmpty) {
+          await _notifyTaskAssigned(updatedTask);
+        }
+        
+        // Vérifier si la date d'échéance est proche
+        if (oldTask.dueDate != updatedTask.dueDate && updatedTask.dueDate != null) {
+          await _checkTaskDueDate(updatedTask);
+        }
+      }
     } catch (e) {
       print('Erreur lors de la mise à jour de la tâche: $e');
       rethrow;
@@ -288,6 +323,138 @@ class TaskService {
     } catch (e) {
       print('Erreur lors de l\'enregistrement de la dépense sur la tâche: $e');
       rethrow;
+    }
+  }
+
+  // Méthodes privées pour les notifications
+  
+  // Vérifier si la date d'échéance d'une tâche est proche et envoyer des notifications
+  Future<void> _checkTaskDueDate(Task task) async {
+    if (task.dueDate == null || task.assignedTo == null || task.assignedTo!.isEmpty) {
+      return;
+    }
+    
+    final now = DateTime.now();
+    final daysUntilDue = task.dueDate!.difference(now).inDays;
+    
+    try {
+      // Obtenir le nom du projet
+      final projectName = await _getProjectName(task.projectId);
+      
+      // Envoyer des notifications si la date d'échéance est proche (1 jour, 3 jours ou 7 jours)
+      if (daysUntilDue <= 7) {
+        await _notificationService.createTaskDueSoonNotification(
+          task.id,
+          task.title,
+          projectName,
+          task.dueDate!,
+          task.assignedTo!,
+        );
+      }
+      
+      // Si la tâche est en retard, envoyer une notification spécifique
+      if (daysUntilDue < 0 && task.status != 'completed') {
+        await _notificationService.createTaskOverdueNotification(
+          task.id,
+          task.title,
+          projectName,
+          task.assignedTo!,
+        );
+      }
+    } catch (e) {
+      print('Erreur lors de la vérification de la date d\'échéance: $e');
+    }
+  }
+  
+  // Envoyer une notification d'assignation de tâche
+  Future<void> _notifyTaskAssigned(Task task) async {
+    if (task.assignedTo == null || task.assignedTo!.isEmpty) {
+      return;
+    }
+    
+    try {
+      // Obtenir le nom du projet
+      final projectName = await _getProjectName(task.projectId);
+      
+      // Envoyer la notification
+      await _notificationService.createTaskAssignedNotification(
+        task.id,
+        task.title,
+        projectName,
+        task.assignedTo!,
+      );
+    } catch (e) {
+      print('Erreur lors de l\'envoi de la notification d\'assignation: $e');
+    }
+  }
+  
+  // Envoyer une notification de changement de statut de tâche
+  Future<void> _notifyTaskStatusChange(Task task, String changedByUserId) async {
+    if (task.assignedTo == null || task.assignedTo!.isEmpty) {
+      return;
+    }
+    
+    try {
+      // Obtenir le nom du projet
+      final projectName = await _getProjectName(task.projectId);
+      
+      // Envoyer la notification
+      await _notificationService.createTaskStatusNotification(
+        task.id,
+        task.title,
+        projectName,
+        task.status,
+        task.assignedTo!,
+        changedByUserId,
+      );
+    } catch (e) {
+      print('Erreur lors de l\'envoi de la notification de changement de statut: $e');
+    }
+  }
+  
+  // Vérifier régulièrement les tâches dont la date d'échéance approche
+  Future<void> checkAllTasksDueDates() async {
+    try {
+      // Récupérer toutes les tâches qui ont une date d'échéance et qui ne sont pas terminées
+      final response = await _supabase
+          .from('tasks')
+          .select()
+          .not('due_date', 'is', null)
+          .neq('status', 'completed')
+          .order('due_date', ascending: true);
+      
+      final tasks = response.map<Task>((json) => Task.fromJson(json)).toList();
+      
+      // Vérifier chaque tâche
+      for (final task in tasks) {
+        if (task.dueDate != null && task.assignedTo != null && task.assignedTo!.isNotEmpty) {
+          final now = DateTime.now();
+          final daysUntilDue = task.dueDate!.difference(now).inDays;
+          
+          // Si la date d'échéance est dans 1, 3 ou 7 jours, ou si la tâche est en retard
+          if (daysUntilDue == 7 || daysUntilDue == 3 || daysUntilDue == 1 || daysUntilDue < 0) {
+            await _checkTaskDueDate(task);
+          }
+        }
+      }
+    } catch (e) {
+      print('Erreur lors de la vérification des dates d\'échéance de toutes les tâches: $e');
+    }
+  }
+  
+  // Obtenir le nom d'un projet à partir de son ID
+  Future<String> _getProjectName(String projectId) async {
+    try {
+      final response = await _supabase
+          .from('projects')
+          .select('name')
+          .eq('id', projectId)
+          .single();
+      
+      return response['name'] as String;
+    } catch (e) {
+      print('Erreur lors de la récupération du nom du projet: $e');
+      return 'Projet inconnu';
     }
   }
 }

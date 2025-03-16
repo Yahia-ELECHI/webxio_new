@@ -34,30 +34,95 @@ class BudgetService {
     }
   }
 
-  // Récupérer tous les budgets créés par l'utilisateur actuel
+  // Récupérer tous les budgets accessibles par l'utilisateur actuel
   Future<List<Budget>> getAllBudgets() async {
     try {
+      final userId = _supabase.auth.currentUser!.id;
+      print('Utilisateur actuel: $userId');
+      
       final isAdmin = await isUserAdmin();
+      print('Est administrateur: $isAdmin');
       
       if (isAdmin) {
-        // Si l'utilisateur est un administrateur, récupérer tous les budgets
-        final response = await _supabase
+        // Si l'utilisateur est un administrateur, récupérer tous les budgets disponibles
+        
+        // 1. Récupérer toutes les équipes dont l'utilisateur est membre
+        final teamsResponse = await _supabase
+            .from('team_members')
+            .select('team_id')
+            .eq('user_id', userId)
+            .eq('status', 'active');
+        
+        final teamIds = teamsResponse.map<String>((json) => json['team_id'] as String).toList();
+        print('Équipes trouvées: ${teamIds.length} - $teamIds');
+        
+        // 2. Récupérer TOUS les budgets disponibles dans l'application
+        final allBudgetsResponse = await _supabase
             .from('budgets')
             .select()
             .order('start_date', ascending: false);
+        
+        final allBudgets = allBudgetsResponse.map<Budget>((json) => Budget.fromJson(json)).toList();
+        print('Tous les budgets disponibles: ${allBudgets.length}');
+        allBudgets.forEach((b) => print('Budget disponible: ${b.id} - ${b.name} - créé par: ${b.createdBy}'));
+        
+        // 3. Récupérer les budgets personnels de l'uti
+        //lisateur (pour les marquer comme favoris)
+        final personalBudgetsResponse = await _supabase
+            .from('budgets')
+            .select()
+            .eq('created_by', userId);
+        
+        final personalBudgets = personalBudgetsResponse.map<Budget>((json) => Budget.fromJson(json)).toList();
+        print('Budgets personnels: ${personalBudgets.length}');
+        
+        // 4. Récupérer les projets associés à ces équipes (pour les logs et futurs filtres)
+        List<String> projectIds = [];
+        
+        if (teamIds.isNotEmpty) {
+          for (final teamId in teamIds) {
+            final projectsResponse = await _supabase
+                .from('team_projects')
+                .select('project_id')
+                .eq('team_id', teamId);
             
-        return response.map<Budget>((json) => Budget.fromJson(json)).toList();
+            final teamProjects = projectsResponse.map<String>((json) => json['project_id'] as String).toList();
+            print('Projets de l\'équipe $teamId: ${teamProjects.length} - $teamProjects');
+            
+            projectIds.addAll(teamProjects);
+          }
+        }
+        print('Total des projets trouvés: ${projectIds.length} - $projectIds');
+        
+        // 5. Récupérer les budgets alloués à ces projets (pour les logs)
+        if (projectIds.isNotEmpty) {
+          for (final projectId in projectIds) {
+            final allocationsResponse = await _supabase
+                .from('budget_allocations')
+                .select('budget_id')
+                .eq('project_id', projectId);
+            
+            final projectBudgetIds = allocationsResponse.map<String>((json) => json['budget_id'] as String).toList();
+            print('Budgets alloués au projet $projectId: ${projectBudgetIds.length} - $projectBudgetIds');
+          }
+        }
+        
+        print('Total final des budgets pour administrateur: ${allBudgets.length}');
+        
+        return allBudgets;
       } else {
         // Sinon, récupérer uniquement les budgets créés par l'utilisateur actuel
-        final userId = _supabase.auth.currentUser!.id;
-        
         final response = await _supabase
             .from('budgets')
             .select()
             .eq('created_by', userId)
             .order('start_date', ascending: false);
             
-        return response.map<Budget>((json) => Budget.fromJson(json)).toList();
+        final userBudgets = response.map<Budget>((json) => Budget.fromJson(json)).toList();
+        print('Budgets utilisateur (non admin): ${userBudgets.length}');
+        userBudgets.forEach((b) => print('Budget: ${b.id} - ${b.name}'));
+        
+        return userBudgets;
       }
     } catch (e) {
       print('Erreur lors de la récupération des budgets: $e');
@@ -535,27 +600,94 @@ class BudgetService {
     String projectId,
     double amount,
     String description,
+    [String? phaseId]
   ) async {
     try {
       final userId = _supabase.auth.currentUser!.id;
-      final allocationId = _uuid.v4();
       final now = DateTime.now().toUtc();
 
-      final allocation = BudgetAllocation(
-        id: allocationId,
-        budgetId: budgetId,
-        projectId: projectId,
-        amount: amount,
-        description: description,
-        allocationDate: now,
-        createdAt: now,
-        createdBy: userId,
+      // Récupérer les informations du budget source pour la description et le montant actuel
+      final sourceBudget = await getBudgetById(budgetId);
+      
+      // Calculer le nouveau montant du budget source
+      final newBudgetAmount = sourceBudget.currentAmount - amount;
+      
+      // Mettre à jour le montant du budget source directement
+      final updatedSourceBudget = sourceBudget.copyWith(
+        currentAmount: newBudgetAmount,
+        updatedAt: now,
       );
+      
+      await updateBudget(updatedSourceBudget);
 
-      await _supabase.from('budget_allocations').insert(allocation.toJson());
-      return allocation;
+      // Vérifier si une allocation existe déjà pour ce couple budget-projet
+      final existingResponse = await _supabase
+          .from('budget_allocations')
+          .select()
+          .eq('budget_id', budgetId)
+          .eq('project_id', projectId);
+
+      if (existingResponse.isNotEmpty) {
+        // Si une allocation existe déjà, la mettre à jour en ajoutant le montant
+        final existingAllocation = BudgetAllocation.fromJson(existingResponse[0]);
+        final updatedAllocation = existingAllocation.copyWith(
+          amount: existingAllocation.amount + amount,
+          description: description, // Mettre à jour la description avec la nouvelle
+          updatedAt: now,
+        );
+
+        await _supabase
+            .from('budget_allocations')
+            .update(updatedAllocation.toJson())
+            .eq('id', existingAllocation.id);
+        
+        // Créer une transaction positive pour le projet (crédit dans le budget du projet)
+        await createTransaction(
+          null, // budgetId - null pour ne pas affecter le solde du budget source
+          projectId,
+          phaseId, // phaseId (si spécifié)
+          null, // taskId
+          amount, // Montant positif car c'est une entrée pour le projet
+          "Allocation depuis: ${sourceBudget.name} - $description",
+          now,
+          "income", // C'est une entrée pour le projet
+          "Allocation", // Sous-catégorie pour faciliter le filtrage
+        );
+
+        return updatedAllocation;
+      } else {
+        // Si aucune allocation n'existe, en créer une nouvelle
+        final allocationId = _uuid.v4();
+        final allocation = BudgetAllocation(
+          id: allocationId,
+          budgetId: budgetId,
+          projectId: projectId,
+          amount: amount,
+          description: description,
+          allocationDate: now,
+          createdAt: now,
+          createdBy: userId,
+        );
+
+        await _supabase.from('budget_allocations').insert(allocation.toJson());
+        
+        // Créer une transaction positive pour le projet (crédit dans le budget du projet)
+        await createTransaction(
+          null, // budgetId - null pour ne pas affecter le solde du budget source
+          projectId,
+          phaseId, // phaseId (si spécifié)
+          null, // taskId
+          amount, // Montant positif car c'est une entrée pour le projet
+          "Allocation depuis: ${sourceBudget.name} - $description",
+          now,
+          "income", // C'est une entrée pour le projet
+          "Allocation", // Sous-catégorie pour faciliter le filtrage
+        );
+
+        return allocation;
+      }
     } catch (e) {
-      print('Erreur lors de la création de l\'allocation: $e');
+      print('Erreur lors de la création/mise à jour de l\'allocation: $e');
       rethrow;
     }
   }
@@ -566,8 +698,9 @@ class BudgetService {
     String projectId,
     double amount,
     String description,
+    [String? phaseId]
   ) async {
-    return createAllocation(budgetId, projectId, amount, description);
+    return createAllocation(budgetId, projectId, amount, description, phaseId);
   }
 
   // Mettre à jour une allocation de budget

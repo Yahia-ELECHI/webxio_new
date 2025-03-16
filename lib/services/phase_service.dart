@@ -1,8 +1,12 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/phase_model.dart';
+import '../services/notification_service.dart';
+import '../services/project_service.dart';
 
 class PhaseService {
   final SupabaseClient _supabase = Supabase.instance.client;
+  final NotificationService _notificationService = NotificationService();
+  final ProjectService _projectService = ProjectService();
 
   // Récupère toutes les phases
   Future<List<Phase>> getAllPhases() async {
@@ -105,7 +109,12 @@ class PhaseService {
           .select()
           .single();
 
-      return Phase.fromJson(response);
+      final createdPhase = Phase.fromJson(response);
+      
+      // Envoyer une notification pour la création de phase
+      await _notifyPhaseCreation(createdPhase);
+      
+      return createdPhase;
     } catch (e) {
       print('Erreur lors de la création de la phase: $e');
       return null;
@@ -115,6 +124,9 @@ class PhaseService {
   // Met à jour une phase existante
   Future<Phase?> updatePhase(Phase phase) async {
     try {
+      // Récupérer l'ancienne phase pour comparer le statut
+      final oldPhase = await getPhaseById(phase.id);
+      
       final response = await _supabase
           .from('phases')
           .update(phase.toJson())
@@ -122,7 +134,15 @@ class PhaseService {
           .select()
           .single();
 
-      return Phase.fromJson(response);
+      final updatedPhase = Phase.fromJson(response);
+      
+      // Vérifier si le statut a changé
+      if (oldPhase != null && oldPhase.status != updatedPhase.status) {
+        // Envoyer une notification pour le changement de statut
+        await _notifyPhaseStatusChange(updatedPhase);
+      }
+      
+      return updatedPhase;
     } catch (e) {
       print('Erreur lors de la mise à jour de la phase: $e');
       return null;
@@ -174,6 +194,67 @@ class PhaseService {
     } catch (e) {
       print('Erreur lors de la mise à jour du budget de la phase: $e');
       return false;
+    }
+  }
+
+  // Méthodes privées pour les notifications
+  
+  // Envoie des notifications pour la création d'une phase
+  Future<void> _notifyPhaseCreation(Phase phase) async {
+    try {
+      // Récupérer le nom du projet
+      String projectName = phase.projectName ?? '';
+      if (projectName.isEmpty) {
+        final project = await _supabase
+            .from('projects')
+            .select('name')
+            .eq('id', phase.projectId)
+            .single();
+        projectName = project['name'] as String;
+      }
+      
+      // Récupérer les membres de l'équipe du projet
+      final teamMembers = await _projectService.getProjectTeamMembers(phase.projectId);
+      
+      // Créer les notifications
+      await _notificationService.createPhaseNotification(
+        phase.id,
+        phase.name,
+        projectName,
+        teamMembers,
+      );
+    } catch (e) {
+      print('Erreur lors de l\'envoi des notifications de création de phase: $e');
+    }
+  }
+  
+  // Envoie des notifications pour un changement de statut de phase
+  Future<void> _notifyPhaseStatusChange(Phase phase) async {
+    try {
+      // Récupérer le nom du projet
+      String projectName = phase.projectName ?? '';
+      if (projectName.isEmpty) {
+        final project = await _supabase
+            .from('projects')
+            .select('name')
+            .eq('id', phase.projectId)
+            .single();
+        projectName = project['name'] as String;
+      }
+      
+      // Récupérer les membres de l'équipe du projet
+      final teamMembers = await _projectService.getProjectTeamMembers(phase.projectId);
+      
+      // Créer les notifications
+      await _notificationService.createPhaseStatusNotification(
+        phase.id,
+        phase.name,
+        projectName,
+        phase.status,
+        teamMembers,
+      );
+    } catch (e) {
+      print('Erreur lors de l\'envoi des notifications de changement de statut de phase: $e');
     }
   }
 }
