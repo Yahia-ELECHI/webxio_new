@@ -2,6 +2,12 @@
 
 Une application mobile Flutter pour la gestion de projets et de tâches, avec authentification et stockage des données dans Supabase.
 
+## Démonstration de l'Application
+
+Voici une démonstration des fonctionnalités principales de l'application :
+
+https://github.com/Yahia-ELECHI/webxio_new/raw/main/assets/demo/demo.webm
+
 ## Fonctionnalités
 
 - Authentification des utilisateurs (connexion, inscription)
