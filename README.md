@@ -6,7 +6,9 @@ Une application mobile Flutter pour la gestion de projets et de tâches, avec au
 
 Voici une démonstration des fonctionnalités principales de l'application :
 
-https://github.com/Yahia-ELECHI/webxio_new/raw/main/assets/demo/demo.webm
+![Démo WebXio](https://raw.githubusercontent.com/Yahia-ELECHI/webxio_new/main/assets/demo/demo.webm)
+
+Pour visualiser la vidéo de démonstration, vous pouvez également [télécharger directement le fichier webm](https://github.com/Yahia-ELECHI/webxio_new/raw/main/assets/demo/demo.webm).
 
 ## Fonctionnalités
 
