@@ -38,6 +38,40 @@ L'application intègre un système complet de notifications couvrant les événe
    - Tâche en retard
    - Changement de statut
 
+## Technologies et Versions
+
+### Environnement de développement
+- Dart SDK : ^3.7.0
+- Flutter : dernière version stable
+
+### Frameworks et bibliothèques principales
+- Supabase Flutter : ^2.8.4
+- Supabase : ^2.0.8
+- Flutter DotEnv : ^5.2.1
+- UUID : ^4.5.1
+- Flutter Animate : ^4.5.2
+- Table Calendar : ^3.0.9
+- Intl : ^0.19.0
+- FL Chart : ^0.70.2
+
+### Configuration Android
+- Java : Version 11
+- NDK : 27.0.12077973
+- Target SDK : Flutter SDK (dernière version)
+- Min SDK : Flutter SDK (dernière version)
+
+### Bibliothèques UI et fonctionnalités spécifiques
+- Cupertino Icons : ^1.0.8
+- Syncfusion Flutter Charts : ^28.2.9
+- Lottie : ^3.3.1
+- Cached Network Image : ^3.4.1
+- Image Picker : ^1.1.2
+- File Picker : ^9.0.2
+- Share Plus : ^10.1.4
+- URL Launcher : ^6.3.1
+- WebView Flutter : ^4.7.0
+- Flutter PDF View : ^1.4.0
+
 ## Configuration de Supabase
 
 Pour configurer la base de données Supabase, suivez ces étapes :
