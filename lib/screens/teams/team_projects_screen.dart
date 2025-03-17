@@ -4,6 +4,7 @@ import '../../models/project_model.dart';
 import '../../services/team_service/team_service.dart';
 import '../../widgets/islamic_patterns.dart';
 import '../projects/project_detail_screen.dart';
+import 'project_to_team_dialog.dart';
 
 class TeamProjectsScreen extends StatefulWidget {
   final Team team;
@@ -56,16 +57,17 @@ class _TeamProjectsScreenState extends State<TeamProjectsScreen> {
   void _showAddProjectDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ajouter un projet à l\'équipe'),
-        content: const Text('Cette fonctionnalité sera implémentée ultérieurement.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fermer'),
-          ),
-        ],
-      ),
+      builder: (context) {
+        return ProjectToTeamDialog(
+          teamId: widget.team.id,
+          onProjectsAdded: () {
+            _loadProjects();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Projet(s) ajouté(s) avec succès')),
+            );
+          },
+        );
+      },
     );
   }
 

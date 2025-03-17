@@ -410,4 +410,31 @@ class NotificationService {
       return false;
     }
   }
+
+  // Créer une notification quand un projet est ajouté à une équipe
+  Future<bool> createProjectAddedToTeamNotification({
+    required String projectId,
+    required String projectName,
+    required String teamId,
+    required String teamName,
+    required String userId,
+  }) async {
+    try {
+      final notification = Notification(
+        id: _uuid.v4(),
+        title: "Projet ajouté à l'équipe",
+        message: "Le projet \"$projectName\" a été ajouté à l'équipe \"$teamName\".",
+        createdAt: DateTime.now(),
+        type: NotificationType.projectAddedToTeam,
+        relatedId: projectId,
+        userId: userId,
+      );
+      
+      await _supabase.from('notifications').insert(notification.toJson());
+      return true;
+    } catch (e) {
+      print('Erreur lors de la création de la notification: $e');
+      return false;
+    }
+  }
 }

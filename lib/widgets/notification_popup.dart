@@ -105,6 +105,7 @@ class _NotificationPopupState extends State<NotificationPopup> {
       case app_models.NotificationType.projectCreated:
       case app_models.NotificationType.projectStatusChanged:
       case app_models.NotificationType.projectBudgetAlert:
+      case app_models.NotificationType.projectAddedToTeam:
         // Naviguer vers la page du projet
         Navigator.pushNamed(
           context, 

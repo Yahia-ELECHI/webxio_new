@@ -12,6 +12,7 @@ enum NotificationType {
   taskStatusChanged,
   projectInvitation,
   newUser,
+  projectAddedToTeam,
 }
 
 class Notification {
@@ -95,6 +96,7 @@ class Notification {
       case NotificationType.projectCreated:
       case NotificationType.projectStatusChanged:
       case NotificationType.projectInvitation:
+      case NotificationType.projectAddedToTeam:
         return Icons.folder;
       case NotificationType.projectBudgetAlert:
         return Icons.attach_money;
@@ -120,6 +122,8 @@ class Notification {
         return Colors.amber;
       case NotificationType.projectBudgetAlert:
         return Colors.orange;
+      case NotificationType.projectAddedToTeam:
+        return Colors.lightBlue;
       case NotificationType.phaseCreated:
         return Colors.cyan;
       case NotificationType.phaseStatusChanged:

@@ -5,6 +5,7 @@ import '../../config/supabase_config.dart';
 import '../../models/team_model.dart';
 import '../auth_service.dart';
 import '../email_service.dart';
+import '../notification_service.dart';
 import '../../models/project_model.dart';
 
 class TeamService {
@@ -17,6 +18,7 @@ class TeamService {
   static const String _projectsTable = 'projects';
   static const String _usersTable = 'users';
   static const String _profilesTable = 'profiles';
+  final NotificationService _notificationService = NotificationService();
 
   // Équipes
   Future<List<Team>> getTeams() async {
@@ -285,6 +287,21 @@ class TeamService {
             'team_id': teamId,
             'project_id': projectId,
           });
+      
+      // Envoyer une notification pour informer que le projet a été ajouté à l'équipe
+      try {
+        final team = await getTeam(teamId);
+        final project = await _supabase
+            .from(_projectsTable)
+            .select()
+            .eq('id', projectId)
+            .single();
+            
+        await _notifyProjectAddedToTeam(team, Project.fromJson(project));
+      } catch (notifError) {
+        print('Erreur lors de l\'envoi de la notification: $notifError');
+        // On ne propage pas l'erreur pour ne pas interrompre le flux principal
+      }
     } catch (e) {
       print('Erreur lors de l\'ajout du projet à l\'équipe: $e');
       rethrow;
@@ -1050,6 +1067,32 @@ class TeamService {
     } catch (e) {
       print('Erreur lors de la récupération des membres d\'équipe pour l\'utilisateur: $e');
       rethrow;
+    }
+  }
+
+  // Utilitaires
+  User? getCurrentUser() {
+    return _supabase.auth.currentUser;
+  }
+
+  // Méthode pour notifier que le projet a été ajouté à l'équipe
+  Future<void> _notifyProjectAddedToTeam(Team team, Project project) async {
+    try {
+      // Récupérer tous les membres de l'équipe
+      final teamMembers = await getTeamMembers(team.id);
+      
+      // Envoyer une notification à chaque membre de l'équipe
+      for (final member in teamMembers) {
+        await _notificationService.createProjectAddedToTeamNotification(
+          projectId: project.id,
+          projectName: project.name,
+          teamId: team.id,
+          teamName: team.name,
+          userId: member.userId,
+        );
+      }
+    } catch (e) {
+      print('Erreur lors de l\'envoi des notifications aux membres: $e');
     }
   }
 }

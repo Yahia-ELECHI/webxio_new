@@ -9,6 +9,7 @@ import '../projects/project_detail_screen.dart';
 import 'team_members_screen.dart';
 import 'team_projects_screen.dart';
 import 'invite_member_screen.dart';
+import 'project_to_team_dialog.dart';
 
 class TeamDetailScreen extends StatefulWidget {
   final Team team;
@@ -202,16 +203,17 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   void _showAddProjectDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ajouter un projet à l\'équipe'),
-        content: const Text('Cette fonctionnalité sera implémentée ultérieurement.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fermer'),
-          ),
-        ],
-      ),
+      builder: (context) {
+        return ProjectToTeamDialog(
+          teamId: _team!.id,
+          onProjectsAdded: () {
+            _loadTeamDetails();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Projet(s) ajouté(s) avec succès')),
+            );
+          },
+        );
+      },
     );
   }
 
