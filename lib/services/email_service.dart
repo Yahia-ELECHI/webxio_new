@@ -13,7 +13,7 @@ class EmailService {
     required String to,
     required String subject,
     required String htmlContent,
-    String senderName = 'WebXIO',
+    String senderName = 'AL MAHIR',
     String senderEmail = 'echiyahya@live.fr',
   }) async {
     try {
@@ -67,8 +67,8 @@ class EmailService {
     // Créer le contenu HTML
     final htmlContent = '''
     <h2>Vous avez été invité à rejoindre l'équipe $teamName</h2>
-    <p>$inviterName vous a invité à rejoindre leur équipe sur l'application WebXIO.</p>
-    <p>Pour accepter cette invitation, veuillez ouvrir ce lien sur votre appareil où l'application WebXIO est installée :</p>
+    <p>$inviterName vous a invité à rejoindre leur équipe sur l'application AL MAHIR Gestion des Projets.</p>
+    <p>Pour accepter cette invitation, veuillez ouvrir ce lien sur votre appareil où l'application AL MAHIR est installée :</p>
     <p><a href="$invitationUrl">Accepter l'invitation</a></p>
     <p>Si le lien ne fonctionne pas directement, vous pouvez copier le code d'invitation suivant et l'utiliser dans l'application :</p>
     <p><strong>Code d'invitation:</strong> $token</p>
@@ -92,7 +92,7 @@ class EmailService {
   static Future<bool> sendInvitationEmailFromInvitation(Invitation invitation) async {
     try {
       final senderEmail = 'echiyahya@live.fr';
-      final senderName = 'WebXIO App';
+      final senderName = 'AL MAHIR';
       
       // Générer le lien avec un schéma personnalisé pour les appareils mobiles
       final invitationLink = 'webxio://invitation?token=${invitation.token}&team=${invitation.teamId}';
@@ -100,16 +100,16 @@ class EmailService {
       // Contenu HTML de l'email avec plus d'informations et de style
       final htmlContent = '''
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
-        <h2 style="color: #1F4E5F;">Invitation à rejoindre une équipe sur WebXIO</h2>
+        <h2 style="color: #1F4E5F;">Invitation à rejoindre une équipe sur AL MAHIR</h2>
         <p>Bonjour,</p>
-        <p>Vous avez été invité(e) à rejoindre l'équipe <strong>${invitation.teamName ?? 'sur WebXIO'}</strong>.</p>
+        <p>Vous avez été invité(e) à rejoindre l'équipe <strong>${invitation.teamName ?? 'sur AL MAHIR'}</strong>.</p>
         
         <div style="margin: 30px 0; text-align: center;">
           <a href="$invitationLink" style="display: inline-block; background-color: #1F4E5F; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Accepter l'invitation</a>
         </div>
         
         <p style="margin-top: 20px;"><strong>Si le bouton ne fonctionne pas :</strong></p>
-        <p>Vous pouvez également ouvrir l'application WebXIO et saisir manuellement le code d'invitation suivant :</p>
+        <p>Vous pouvez également ouvrir l'application AL MAHIR et saisir manuellement le code d'invitation suivant :</p>
         
         <div style="background-color: #f5f5f5; padding: 12px; border-radius: 4px; margin: 15px 0; text-align: center; font-family: monospace; font-size: 18px; letter-spacing: 2px;">
           <strong>${invitation.token}</strong>
@@ -123,22 +123,22 @@ class EmailService {
         </ul>
         
         <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-        <p style="color: #999; font-size: 12px;">Ce message a été envoyé automatiquement par WebXIO. Merci de ne pas y répondre.</p>
+        <p style="color: #999; font-size: 12px;">Ce message a été envoyé automatiquement par AL MAHIR. Merci de ne pas y répondre.</p>
       </div>
       ''';
       
       // Texte brut de l'email (pour les clients qui ne prennent pas en charge le HTML)
       final textContent = '''
-      Invitation à rejoindre une équipe sur WebXIO
+      Invitation à rejoindre une équipe sur AL MAHIR
       
       Bonjour,
       
-      Vous avez été invité(e) à rejoindre l'équipe ${invitation.teamName ?? 'sur WebXIO'}.
+      Vous avez été invité(e) à rejoindre l'équipe ${invitation.teamName ?? 'sur AL MAHIR'}.
       
       Pour accepter l'invitation, veuillez cliquer sur ce lien ou le copier dans votre navigateur :
       $invitationLink
       
-      Si le lien ne fonctionne pas, vous pouvez également ouvrir l'application WebXIO et saisir manuellement le code d'invitation suivant :
+      Si le lien ne fonctionne pas, vous pouvez également ouvrir l'application AL MAHIR et saisir manuellement le code d'invitation suivant :
       ${invitation.token}
       
       Informations supplémentaires :
@@ -146,7 +146,7 @@ class EmailService {
       - ID de l'équipe: ${invitation.teamId}
       - Cette invitation expirera le ${DateFormat('yyyy-MM-dd à HH:mm').format(invitation.expiresAt ?? DateTime.now().add(const Duration(days: 7)))}
       
-      Ce message a été envoyé automatiquement par WebXIO. Merci de ne pas y répondre.
+      Ce message a été envoyé automatiquement par AL MAHIR. Merci de ne pas y répondre.
       ''';
       
       // Envoyer l'email

@@ -153,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     
                     // Description
                     Text(
-                      'Bienvenue sur WebXIO. Veuillez vous connecter pour continuer.',
+                      'Bienvenue sur AL MAHIR. Veuillez vous connecter pour continuer.',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.7),
                         fontSize: 14,

@@ -151,7 +151,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     
                     // Description
                     Text(
-                      'Créez votre compte pour accéder à WebXIO',
+                      'Créez votre compte pour accéder à AL MAHIR',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.7),
                         fontSize: 14,

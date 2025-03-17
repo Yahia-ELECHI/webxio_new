@@ -1,4 +1,4 @@
-// Fichier de constantes pour l'application WebXIO
+// Fichier de constantes pour l'application AL MAHIR GESTION DES PROJETS
 
 import 'package:flutter/material.dart';
 

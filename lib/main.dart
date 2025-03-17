@@ -136,7 +136,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'WebXIO',
+      title: 'AL MAHIR',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -282,7 +282,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  'WebXIO',
+                  'AL MAHIR',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
