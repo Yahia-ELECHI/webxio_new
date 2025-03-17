@@ -64,17 +64,103 @@ class EmailService {
     // Générer l'URL d'invitation pour application mobile
     final invitationUrl = 'webxio://invitation?token=$token&team=$teamId';
 
-    // Créer le contenu HTML
+    // Créer le contenu HTML en utilisant le nouveau template
     final htmlContent = '''
-    <h2>Vous avez été invité à rejoindre l'équipe $teamName</h2>
-    <p>$inviterName vous a invité à rejoindre leur équipe sur l'application AL MAHIR Gestion des Projets.</p>
-    <p>Pour accepter cette invitation, veuillez ouvrir ce lien sur votre appareil où l'application AL MAHIR est installée :</p>
-    <p><a href="$invitationUrl">Accepter l'invitation</a></p>
-    <p>Si le lien ne fonctionne pas directement, vous pouvez copier le code d'invitation suivant et l'utiliser dans l'application :</p>
-    <p><strong>Code d'invitation:</strong> $token</p>
-    <p><strong>ID d'équipe:</strong> $teamId</p>
-    <p>Ce lien expirera dans 7 jours.</p>
-    <p>Si vous n'avez pas demandé cette invitation, vous pouvez ignorer cet email.</p>
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Invitation à rejoindre $teamName sur AL MAHIR</title>
+      <style>
+        body {
+          margin: 0;
+          padding: 0;
+          background: linear-gradient(to bottom, #1F4E5F, #0D2B36);
+          font-family: Arial, sans-serif;
+          color: #ffffff;
+        }
+        .email-container {
+          max-width: 600px;
+          margin: 50px auto;
+          background-color: rgba(0, 0, 0, 0.3);
+          border-radius: 8px;
+          overflow: hidden;
+          position: relative;
+          padding: 20px;
+          text-align: center;
+        }
+        .email-container::before {
+          content: "";
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-size: cover;
+          opacity: 0.09;
+          z-index: 0;
+        }
+        .content {
+          position: relative;
+          z-index: 1;
+        }
+        h2 {
+          color: #FFD900;
+          margin-bottom: 20px;
+        }
+        p {
+          line-height: 1.5;
+          margin: 0 0 20px;
+        }
+        .btn {
+          display: inline-block;
+          background-color: #FFD900;
+          color: #0D2B36;
+          padding: 12px 24px;
+          text-decoration: none;
+          border-radius: 5px;
+          font-weight: bold;
+          margin: 20px 0;
+        }
+        .footer {
+          font-size: 12px;
+          color: #cccccc;
+          margin-top: 20px;
+        }
+        .details {
+          background-color: rgba(255, 255, 255, 0.1);
+          padding: 15px;
+          border-radius: 5px;
+          margin: 20px 0;
+          text-align: left;
+        }
+        .code {
+          background-color: rgba(0, 0, 0, 0.3);
+          padding: 10px;
+          border-radius: 4px;
+          font-family: monospace;
+          letter-spacing: 1px;
+          margin: 10px 0;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="email-container">
+        <div class="content">
+          <h2>Invitation à rejoindre l'équipe $teamName</h2>
+          <p>$inviterName vous a invité à rejoindre leur équipe sur l'application AL MAHIR Gestion des Projets.</p>
+          <a class="btn" href="$invitationUrl">Accepter l'invitation</a>
+          <div class="details">
+            <p>Si le bouton ne fonctionne pas, vous pouvez utiliser ces informations dans l'application :</p>
+            <p><strong>Code d'invitation:</strong> <span class="code">$token</span></p>
+            <p><strong>ID d'équipe:</strong> <span class="code">$teamId</span></p>
+          </div>
+          <p class="footer">Ce lien expirera dans 7 jours. Si vous n'avez pas demandé cette invitation, veuillez ignorer cet email.</p>
+        </div>
+      </div>
+    </body>
+    </html>
     ''';
 
     // Sujet de l'email
@@ -97,34 +183,120 @@ class EmailService {
       // Générer le lien avec un schéma personnalisé pour les appareils mobiles
       final invitationLink = 'webxio://invitation?token=${invitation.token}&team=${invitation.teamId}';
       
-      // Contenu HTML de l'email avec plus d'informations et de style
+      // Contenu HTML de l'email avec le nouveau template
       final htmlContent = '''
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
-        <h2 style="color: #1F4E5F;">Invitation à rejoindre une équipe sur AL MAHIR</h2>
-        <p>Bonjour,</p>
-        <p>Vous avez été invité(e) à rejoindre l'équipe <strong>${invitation.teamName ?? 'sur AL MAHIR'}</strong>.</p>
-        
-        <div style="margin: 30px 0; text-align: center;">
-          <a href="$invitationLink" style="display: inline-block; background-color: #1F4E5F; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Accepter l'invitation</a>
+      <!DOCTYPE html>
+      <html lang="fr">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Invitation à rejoindre ${invitation.teamName} sur AL MAHIR</title>
+        <style>
+          body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to bottom, #1F4E5F, #0D2B36);
+            font-family: Arial, sans-serif;
+            color: #ffffff;
+          }
+          .email-container {
+            max-width: 600px;
+            margin: 50px auto;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            padding: 20px;
+            text-align: center;
+          }
+          .email-container::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            opacity: 0.09;
+            z-index: 0;
+          }
+          .content {
+            position: relative;
+            z-index: 1;
+          }
+          h2 {
+            color: #FFD900;
+            margin-bottom: 20px;
+          }
+          p {
+            line-height: 1.5;
+            margin: 0 0 20px;
+          }
+          .btn {
+            display: inline-block;
+            background-color: #FFD900;
+            color: #0D2B36;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            margin: 20px 0;
+          }
+          .footer {
+            font-size: 12px;
+            color: #cccccc;
+            margin-top: 20px;
+          }
+          .details {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            text-align: left;
+          }
+          .code {
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            letter-spacing: 1px;
+            margin: 10px 0;
+          }
+          ul {
+            text-align: left;
+            padding-left: 20px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="email-container">
+          <div class="content">
+            <h2>Invitation à rejoindre une équipe sur AL MAHIR</h2>
+            <p>Bonjour,</p>
+            <p>Vous avez été invité(e) à rejoindre l'équipe <strong>${invitation.teamName ?? 'sur AL MAHIR'}</strong>.</p>
+            
+            <a class="btn" href="$invitationLink">Accepter l'invitation</a>
+            
+            <div class="details">
+              <p><strong>Si le bouton ne fonctionne pas :</strong></p>
+              <p>Ouvrez l'application AL MAHIR et saisissez le code d'invitation :</p>
+              <div class="code">
+                <strong>${invitation.token}</strong>
+              </div>
+              
+              <p><strong>Informations supplémentaires :</strong></p>
+              <ul>
+                <li>Token: ${invitation.token}</li>
+                <li>ID de l'équipe: ${invitation.teamId}</li>
+                <li>Cette invitation expirera le ${DateFormat('yyyy-MM-dd à HH:mm').format(invitation.expiresAt ?? DateTime.now().add(const Duration(days: 7)))}</li>
+              </ul>
+            </div>
+            
+            <p class="footer">Ce message a été envoyé automatiquement par AL MAHIR. Merci de ne pas y répondre.</p>
+          </div>
         </div>
-        
-        <p style="margin-top: 20px;"><strong>Si le bouton ne fonctionne pas :</strong></p>
-        <p>Vous pouvez également ouvrir l'application AL MAHIR et saisir manuellement le code d'invitation suivant :</p>
-        
-        <div style="background-color: #f5f5f5; padding: 12px; border-radius: 4px; margin: 15px 0; text-align: center; font-family: monospace; font-size: 18px; letter-spacing: 2px;">
-          <strong>${invitation.token}</strong>
-        </div>
-        
-        <p><strong>Informations supplémentaires :</strong></p>
-        <ul>
-          <li>Token: ${invitation.token}</li>
-          <li>ID de l'équipe: ${invitation.teamId}</li>
-          <li>Cette invitation expirera le ${DateFormat('yyyy-MM-dd à HH:mm').format(invitation.expiresAt ?? DateTime.now().add(const Duration(days: 7)))}</li>
-        </ul>
-        
-        <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-        <p style="color: #999; font-size: 12px;">Ce message a été envoyé automatiquement par AL MAHIR. Merci de ne pas y répondre.</p>
-      </div>
+      </body>
+      </html>
       ''';
       
       // Texte brut de l'email (pour les clients qui ne prennent pas en charge le HTML)
