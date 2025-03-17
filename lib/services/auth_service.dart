@@ -74,4 +74,16 @@ class AuthService {
       rethrow;
     }
   }
+  
+  // Réinitialisation de mot de passe
+  Future<void> resetPassword({required String email}) async {
+    try {
+      print('Tentative d\'envoi de réinitialisation de mot de passe pour: $email');
+      await _client.auth.resetPasswordForEmail(email);
+      print('Email de réinitialisation envoyé avec succès');
+    } catch (e) {
+      print('Erreur lors de l\'envoi de l\'email de réinitialisation: $e');
+      rethrow;
+    }
+  }
 }

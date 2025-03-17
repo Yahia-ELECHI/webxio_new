@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
 import 'register_screen.dart';
+import 'forgot_password_screen.dart';
 import '../../main.dart';
 import '../../widgets/islamic_patterns.dart';
 
@@ -267,6 +268,37 @@ class _LoginScreenState extends State<LoginScreen> {
                                 }
                                 return null;
                               },
+                            ),
+                            
+                            // Lien mot de passe oublié
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: TextButton(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const ForgotPasswordScreen(),
+                                      ),
+                                    );
+                                  },
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    minimumSize: const Size(0, 30),
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    foregroundColor: Colors.white70,
+                                  ),
+                                  child: const Text(
+                                    'Mot de passe oublié ?',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                             
                             const SizedBox(height: 24),
