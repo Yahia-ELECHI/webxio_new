@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:webxio_new/widgets/logo_widget.dart';
 import 'dart:async';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -24,6 +26,7 @@ import 'widgets/notification_popup.dart';
 import 'services/auth_service.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:io';
+import 'package:flutter_svg/flutter_svg.dart';
 
 // Clé globale pour accéder au navigateur depuis n'importe où
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -275,12 +278,17 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.dashboard,
-                  size: 80,
-                  color: Colors.white,
+                // Logo doré avec animation de pulsation
+                const LogoWidget(
+                  isGold: false,
+                  size: 180,
+                  animationType: LogoAnimationType.pulse,
+                  repeat: true,
+                  animationDuration: Duration(milliseconds: 1500),
                 ),
+                
                 const SizedBox(height: 24),
+                
                 const Text(
                   'AL MAHIR',
                   style: TextStyle(
@@ -432,7 +440,15 @@ class _MainAppScreenState extends State<MainAppScreen> {
           : null,
       appBar: isSmallScreen
           ? AppBar(
-              title: const Text('AL MAHIR'),
+              title: Transform.translate(
+                offset: const Offset(-35, 0),
+                child: SvgPicture.asset(
+                  'assets/logo/almahir_blanc_texte_v2.svg',
+                  height: 150,
+                  width: 180,
+                ),
+              ),
+              centerTitle: false,
               backgroundColor: const Color(0xFF1F4E5F),
               foregroundColor: Colors.white,
               flexibleSpace: Stack(

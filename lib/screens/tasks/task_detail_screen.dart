@@ -11,6 +11,7 @@ import '../../services/user_service.dart';
 import '../../services/attachment_service.dart';
 import '../../services/budget_service.dart';
 import '../../widgets/budget_summary_widget.dart';
+import '../../widgets/custom_app_bar.dart';
 import '../budget/transaction_form_screen.dart';
 import '../budget/transaction_list_screen.dart';
 import 'task_form_screen.dart';
@@ -201,8 +202,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_task.title),
+      appBar: CustomAppBar(
+        title: _task.title,
+        showLogo: false,
         actions: [
           PopupMenuButton<String>(
             onSelected: (value) async {

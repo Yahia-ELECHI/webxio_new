@@ -18,6 +18,7 @@ import '../budget/transaction_form_screen.dart';
 import '../budget/transaction_list_screen.dart';
 import 'phases/phases_screen.dart';
 import 'project_form_screen.dart';
+import '../../widgets/custom_app_bar.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final String projectId;
@@ -175,8 +176,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_project?.name ?? 'Détails du projet'),
+      appBar: CustomAppBar(
+        title: _project?.name ?? 'Détails du projet',
+        showLogo: false,
         actions: [
           if (_project != null)
             IconButton(

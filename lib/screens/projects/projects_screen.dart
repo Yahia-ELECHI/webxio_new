@@ -4,6 +4,7 @@ import '../../models/team_model.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/auth_service.dart';
+import '../../widgets/custom_app_bar.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
 
@@ -86,8 +87,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mes Projets'),
+      appBar: CustomAppBar(
+        title: 'Mes Projets',
+        showLogo: false,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

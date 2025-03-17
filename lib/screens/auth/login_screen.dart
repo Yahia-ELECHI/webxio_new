@@ -5,6 +5,7 @@ import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 import '../../main.dart';
 import '../../widgets/islamic_patterns.dart';
+import '../../widgets/logo_widget.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -117,26 +118,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Logo ou icône
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.1),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.5),
-                          width: 2,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.account_circle,
-                        size: 60,
-                        color: Colors.white,
+                    // Logo
+                    Center(
+                      child: const LogoWidget(
+                        isGold: false, // Logo blanc pour l'écran de connexion
+                        size: 180,
+                        animationType: LogoAnimationType.fade,
+                        animationDuration: Duration(milliseconds: 1200),
                       ),
                     ),
                     
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
                     
                     // Titre
                     const Text(

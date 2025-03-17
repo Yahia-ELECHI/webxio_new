@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/islamic_patterns.dart';
+import '../../widgets/logo_widget.dart';
 import 'login_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -100,26 +101,17 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Logo ou icône
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.1),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.5),
-                          width: 2,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.lock_reset,
-                        size: 60,
-                        color: Colors.white,
+                    // Logo 
+                    Center(
+                      child: const LogoWidget(
+                        isGold: false, // Logo blanc pour l'écran de réinitialisation
+                        size: 180,
+                        animationType: LogoAnimationType.float,
+                        animationDuration: Duration(milliseconds: 1500),
                       ),
                     ),
                     
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
                     
                     // Titre
                     const Text(

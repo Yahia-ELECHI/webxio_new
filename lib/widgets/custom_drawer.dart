@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import 'logo_widget.dart';
 
 class CustomDrawer extends StatelessWidget {
   const CustomDrawer({Key? key}) : super(key: key);
@@ -12,24 +13,60 @@ class CustomDrawer extends StatelessWidget {
     return Drawer(
       child: Column(
         children: [
-          UserAccountsDrawerHeader(
-            accountName: const Text('Utilisateur'),
-            accountEmail: Text(user?.email ?? 'Non connecté'),
-            currentAccountPicture: CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Text(
-                user?.email?.substring(0, 1).toUpperCase() ?? 'U',
-                style: const TextStyle(
-                  fontSize: 24.0,
-                  color: Color(0xFF1F4E5F),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
+          // En-tête du drawer avec logo et informations utilisateur
+          Container(
+            padding: const EdgeInsets.only(top: 50, bottom: 16),
             decoration: const BoxDecoration(
               color: Color(0xFF1F4E5F),
             ),
+            child: Column(
+              children: [
+                // Logo doré
+                const LogoWidget(
+                  isGold: true,
+                  size: 70,
+                  animationType: LogoAnimationType.fade,
+                  animationDuration: Duration(milliseconds: 800),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Information utilisateur
+                CircleAvatar(
+                  backgroundColor: Colors.white,
+                  radius: 30,
+                  child: Text(
+                    user?.email?.substring(0, 1).toUpperCase() ?? 'U',
+                    style: const TextStyle(
+                      fontSize: 24.0,
+                      color: Color(0xFF1F4E5F),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 12),
+                
+                Text(
+                  'Utilisateur',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                
+                Text(
+                  user?.email ?? 'Non connecté',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
           ),
+          
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,

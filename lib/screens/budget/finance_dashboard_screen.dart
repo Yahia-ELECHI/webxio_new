@@ -11,6 +11,7 @@ import '../../services/budget_service.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/phase_service/phase_service.dart';
 import '../../services/team_service/team_service.dart';
+import '../../widgets/custom_app_bar.dart';
 import '../projects/project_detail_screen.dart'; // Importer l'écran de détail du projet depuis le bon chemin
 import 'budget_form_screen.dart';
 import 'transaction_form_screen.dart';

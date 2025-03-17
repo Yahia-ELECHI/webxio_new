@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import 'logo_widget.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final List<Widget>? actions;
+  final bool showLogo;
 
   const CustomAppBar({
     Key? key,
     required this.title,
     this.actions,
+    this.showLogo = false,
   }) : super(key: key);
 
   @override
@@ -17,7 +20,21 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     final user = authService.currentUser;
     
     return AppBar(
-      title: Text(title),
+      title: showLogo
+          ? Row(
+              children: [
+                const LogoWidget(
+                  isGold: true,
+                  size: 32,
+                  animationType: LogoAnimationType.rotate,
+                  animationDuration: Duration(milliseconds: 2000),
+                  repeat: true,
+                ),
+                const SizedBox(width: 12),
+                Text(title),
+              ],
+            )
+          : Text(title),
       backgroundColor: const Color(0xFF1F4E5F),
       elevation: 0,
       actions: actions ??

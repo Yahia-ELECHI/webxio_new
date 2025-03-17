@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/auth_service.dart';
 import 'login_screen.dart';
 import '../../widgets/islamic_patterns.dart';
+import '../../widgets/logo_widget.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -112,25 +113,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Logo ou icône
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.1),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.5),
-                          width: 2,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.person_add,
-                        size: 60,
-                        color: Colors.white,
+                    const SizedBox(height: 16),
+                    
+                    // Logo
+                    Center(
+                      child: const LogoWidget(
+                        isGold: false, // Logo blanc pour l'écran d'inscription
+                        size: 180,
+                        animationType: LogoAnimationType.fade,
+                        animationDuration: Duration(milliseconds: 1200),
                       ),
                     ),
                     
