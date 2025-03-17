@@ -103,193 +103,196 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
           ),
           
           // Contenu du menu
-          Column(
-            children: [
-              // En-tête du menu
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                child: Row(
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.2),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.5),
-                          width: 2,
+          SafeArea(
+            child: Column(
+              children: [
+                const SizedBox(height: 16), // Espace supplémentaire en haut
+                // En-tête du menu
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                  child: Row(
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white.withOpacity(0.2),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.5),
+                            width: 2,
+                          ),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            isAuthenticated ? Icons.person : Icons.person_outline,
+                            color: Colors.white,
+                            size: 24,
+                          ),
                         ),
                       ),
-                      child: Center(
-                        child: Icon(
-                          isAuthenticated ? Icons.person : Icons.person_outline,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                    if (_isExpanded || widget.isDrawer) ...[
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              isAuthenticated ? (user.email ?? 'Utilisateur') : 'Invité',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                      if (_isExpanded || widget.isDrawer) ...[
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isAuthenticated ? (user.email ?? 'Utilisateur') : 'Invité',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
+                              const SizedBox(height: 4),
+                              Text(
+                                isAuthenticated ? 'Connecté' : 'Non connecté',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.7),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                
+                const Divider(
+                  color: Colors.white24,
+                  height: 1,
+                  thickness: 1,
+                ),
+                
+                // Éléments du menu
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    children: [
+                      _buildMenuItem(
+                        icon: Icons.dashboard,
+                        title: 'Tableau de bord',
+                        index: 0,
+                      ),
+                      _buildMenuItem(
+                        icon: Icons.folder,
+                        title: 'Projets',
+                        index: 1,
+                      ),
+                      _buildMenuItem(
+                        icon: Icons.group,
+                        title: 'Équipes',
+                        index: 2,
+                      ),
+                      _buildMenuItem(
+                        icon: Icons.calendar_today,
+                        title: 'Calendrier',
+                        index: 3,
+                      ),
+                      _buildMenuItem(
+                        icon: Icons.analytics,
+                        title: 'Statistiques',
+                        index: 4,
+                      ),
+                      _buildMenuItem(
+                        icon: Icons.attach_money,
+                        title: 'Finances',
+                        index: 5,
+                      ),
+                      const Divider(
+                        color: Colors.white24,
+                        height: 32,
+                        thickness: 1,
+                        indent: 16,
+                        endIndent: 16,
+                      ),
+                      _buildMenuItem(
+                        icon: Icons.settings,
+                        title: 'Paramètres',
+                        index: 6,
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Pied du menu
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  child: InkWell(
+                    onTap: () {
+                      if (isAuthenticated) {
+                        _authService.signOut();
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LoginScreen(),
+                          ),
+                        );
+                      } else {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LoginScreen(),
+                          ),
+                        );
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: isAuthenticated ? Colors.red.withOpacity(0.2) : Colors.green.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isAuthenticated ? Colors.red.withOpacity(0.5) : Colors.green.withOpacity(0.5),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isAuthenticated ? Icons.logout : Icons.login,
+                            color: isAuthenticated ? Colors.red.shade300 : Colors.green.shade300,
+                            size: 20,
+                          ),
+                          if (_isExpanded || widget.isDrawer) ...[
+                            const SizedBox(width: 12),
                             Text(
-                              isAuthenticated ? 'Connecté' : 'Non connecté',
+                              isAuthenticated ? 'Déconnexion' : 'Connexion',
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
-                                fontSize: 12,
+                                color: isAuthenticated ? Colors.red.shade300 : Colors.green.shade300,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              
-              const Divider(
-                color: Colors.white24,
-                height: 1,
-                thickness: 1,
-              ),
-              
-              // Éléments du menu
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  children: [
-                    _buildMenuItem(
-                      icon: Icons.dashboard,
-                      title: 'Tableau de bord',
-                      index: 0,
-                    ),
-                    _buildMenuItem(
-                      icon: Icons.folder,
-                      title: 'Projets',
-                      index: 1,
-                    ),
-                    _buildMenuItem(
-                      icon: Icons.group,
-                      title: 'Équipes',
-                      index: 2,
-                    ),
-                    _buildMenuItem(
-                      icon: Icons.calendar_today,
-                      title: 'Calendrier',
-                      index: 3,
-                    ),
-                    _buildMenuItem(
-                      icon: Icons.analytics,
-                      title: 'Statistiques',
-                      index: 4,
-                    ),
-                    _buildMenuItem(
-                      icon: Icons.attach_money,
-                      title: 'Finances',
-                      index: 5,
-                    ),
-                    const Divider(
-                      color: Colors.white24,
-                      height: 32,
-                      thickness: 1,
-                      indent: 16,
-                      endIndent: 16,
-                    ),
-                    _buildMenuItem(
-                      icon: Icons.settings,
-                      title: 'Paramètres',
-                      index: 6,
-                    ),
-                  ],
-                ),
-              ),
-              
-              // Pied du menu
-              Container(
-                padding: const EdgeInsets.all(16),
-                child: InkWell(
-                  onTap: () {
-                    if (isAuthenticated) {
-                      _authService.signOut();
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const LoginScreen(),
-                        ),
-                      );
-                    } else {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const LoginScreen(),
-                        ),
-                      );
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: isAuthenticated ? Colors.red.withOpacity(0.2) : Colors.green.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isAuthenticated ? Colors.red.withOpacity(0.5) : Colors.green.withOpacity(0.5),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isAuthenticated ? Icons.logout : Icons.login,
-                          color: isAuthenticated ? Colors.red.shade300 : Colors.green.shade300,
-                          size: 20,
-                        ),
-                        if (_isExpanded || widget.isDrawer) ...[
-                          const SizedBox(width: 12),
-                          Text(
-                            isAuthenticated ? 'Déconnexion' : 'Connexion',
-                            style: TextStyle(
-                              color: isAuthenticated ? Colors.red.shade300 : Colors.green.shade300,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              
-              // Bouton pour réduire/agrandir le menu (seulement si ce n'est pas un drawer)
-              if (!widget.isDrawer)
-                Container(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: IconButton(
-                    onPressed: _toggleExpanded,
-                    icon: AnimatedIcon(
-                      icon: AnimatedIcons.menu_close,
-                      progress: _animation,
-                      color: Colors.white70,
+                
+                // Bouton pour réduire/agrandir le menu (seulement si ce n'est pas un drawer)
+                if (!widget.isDrawer)
+                  Container(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: IconButton(
+                      onPressed: _toggleExpanded,
+                      icon: AnimatedIcon(
+                        icon: AnimatedIcons.menu_close,
+                        progress: _animation,
+                        color: Colors.white70,
+                      ),
+                      tooltip: _isExpanded ? 'Réduire le menu' : 'Agrandir le menu',
                     ),
-                    tooltip: _isExpanded ? 'Réduire le menu' : 'Agrandir le menu',
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
