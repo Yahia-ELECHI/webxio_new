@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../models/budget_transaction_model.dart';
+import '../../models/project_transaction_model.dart';
 import '../../services/budget_service.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/error_message.dart';
@@ -28,7 +28,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   final BudgetService _budgetService = BudgetService();
   bool _isLoading = true;
   String? _errorMessage;
-  List<BudgetTransaction> _transactions = [];
+  List<ProjectTransaction> _transactions = [];
   
   final NumberFormat _currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
   
@@ -54,7 +54,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     });
 
     try {
-      List<BudgetTransaction> transactions;
+      List<ProjectTransaction> transactions;
       
       // Charger les transactions soit pour un budget spécifique, soit toutes
       if (widget.budgetId != null) {
@@ -88,8 +88,8 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     }
   }
 
-  List<BudgetTransaction> _getFilteredTransactions() {
-    List<BudgetTransaction> filteredList = List.from(_transactions);
+  List<ProjectTransaction> _getFilteredTransactions() {
+    List<ProjectTransaction> filteredList = List.from(_transactions);
     
     // Appliquer le filtre de catégorie
     if (_filterCategory != 'Toutes') {
@@ -387,7 +387,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     );
   }
 
-  Widget _buildTransactionListItem(BudgetTransaction transaction) {
+  Widget _buildTransactionListItem(ProjectTransaction transaction) {
     final bool isIncome = transaction.amount > 0;
     final Color amountColor = isIncome ? Colors.green : Colors.red;
     final IconData icon = isIncome 

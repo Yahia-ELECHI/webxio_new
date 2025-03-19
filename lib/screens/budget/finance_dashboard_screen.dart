@@ -2,20 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../models/budget_model.dart';
-import '../../models/budget_transaction_model.dart';
+import '../../models/project_transaction_model.dart';
 import '../../models/project_model.dart';
 import '../../models/phase_model.dart';
 import '../../models/team_model.dart';
-import '../../services/budget_service.dart';
+import '../../services/project_finance_service.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/phase_service/phase_service.dart';
 import '../../services/team_service/team_service.dart';
 import '../../widgets/custom_app_bar.dart';
-import '../projects/project_detail_screen.dart'; // Importer l'écran de détail du projet depuis le bon chemin
-import 'budget_form_screen.dart';
+import '../projects/project_detail_screen.dart';
 import 'transaction_form_screen.dart';
 import 'transaction_list_screen.dart';
+import '../finance/project_transaction_screen.dart';
 
 class FinanceDashboardScreen extends StatefulWidget {
   const FinanceDashboardScreen({Key? key}) : super(key: key);
@@ -25,41 +24,46 @@ class FinanceDashboardScreen extends StatefulWidget {
 }
 
 class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with SingleTickerProviderStateMixin {
-  final BudgetService _budgetService = BudgetService();
   final ProjectService _projectService = ProjectService();
   final PhaseService _phaseService = PhaseService();
   final TeamService _teamService = TeamService();
+  final ProjectFinanceService _projectFinanceService = ProjectFinanceService();
   
   late TabController _tabController;
   
   bool _isLoading = true;
-  List<Budget> _budgets = [];
-  List<BudgetTransaction> _recentTransactions = [];
+  List<ProjectTransaction> _recentTransactions = [];
+  List<ProjectTransaction> _projectTransactions = [];
   List<Project> _projects = [];
-  List<Project> _projectsWithBudgetAlert = [];
+  List<Project> _projectsWithBalanceAlert = [];
   
   // États pour les équipes et visualisation des finances d'équipe
   bool _isAdmin = false;
   List<Team> _adminTeams = [];
-  String? _selectedTeamId;
-  bool _showTeamFinances = true; // Changé de false à true pour afficher la vue équipe par défaut
   
-  // Obtenir le nom de l'équipe sélectionnée
-  String get _selectedTeamName {
-    if (_selectedTeamId == null || _adminTeams.isEmpty) {
+  // Nouvelle approche: sélection par projet au lieu de l'équipe
+  String? _selectedProjectId;
+  bool _showAllProjects = true; // Afficher tous les projets par défaut au lieu des finances équipe
+  
+  // Obtenir le nom du projet sélectionné
+  String get _selectedProjectName {
+    if (_selectedProjectId == null || _projects.isEmpty) {
       return "";
     }
     
-    final selectedTeam = _adminTeams.firstWhere(
-      (team) => team.id == _selectedTeamId,
-      orElse: () => Team(
-        name: "Équipe inconnue",
-        createdAt: DateTime.now(),
+    final project = _projects.firstWhere(
+      (p) => p.id == _selectedProjectId,
+      orElse: () => Project(
+        id: "",
+        name: "Projet inconnu",
+        description: "",
+        status: "active",
         createdBy: "",
+        createdAt: DateTime.now(),
       ),
     );
     
-    return selectedTeam.name;
+    return project.name;
   }
   
   // États pour les graphiques interactifs
@@ -71,14 +75,14 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
   DateTime _endDate = DateTime.now();
   
   // Statistiques financières
-  double _totalBudget = 0;
-  double _totalSpent = 0;
-  double _totalRemaining = 0;
+  double _totalRevenues = 0;
+  double _totalExpenses = 0;
+  double _totalBalance = 0;
   
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _loadData();
   }
   
@@ -94,7 +98,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     });
     
     try {
-      final userId = _budgetService.supabaseClient.auth.currentUser!.id;
+      final userId = _projectFinanceService.supabaseClient.auth.currentUser!.id;
       
       // Vérifier si l'utilisateur est administrateur d'une équipe
       final adminTeams = await _teamService.getUserAdminTeams(userId);
@@ -106,96 +110,57 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
         _isAdmin = isAdmin;
       });
       
-      // Sélectionner automatiquement la première équipe si aucune n'est sélectionnée
-      // et que l'utilisateur est admin d'au moins une équipe
-      if (_selectedTeamId == null && isAdmin && adminTeams.isNotEmpty) {
-        _selectedTeamId = adminTeams.first.id;
-      }
+      // Charger les transactions selon le contexte (personnel ou équipe)
+      List<ProjectTransaction> projectTransactions;
       
-      // Si l'utilisateur n'est pas admin ou n'a pas d'équipes, revenir à la vue personnelle
-      if (!isAdmin || adminTeams.isEmpty) {
-        _showTeamFinances = false;
-        _selectedTeamId = null;
-      }
-      
-      // Charger les budgets selon le contexte (personnel ou équipe)
-      List<Budget> budgets;
-      List<BudgetTransaction> transactions;
-      
-      if (_showTeamFinances && isAdmin && _selectedTeamId != null) {
-        // Charger les budgets de l'équipe sélectionnée
-        budgets = await _budgetService.getTeamBudgets(_selectedTeamId!);
-        transactions = await _budgetService.getTeamTransactions(_selectedTeamId!);
+      if (_isAdmin && _selectedProjectId != null) {
+        // Charger les transactions de l'équipe sélectionnée
+        projectTransactions = await _projectFinanceService.getProjectProjectTransactions(_selectedProjectId!);
       } else {
-        // Charger les budgets personnels de l'utilisateur
-        budgets = await _budgetService.getAllBudgets();
-        transactions = await _budgetService.getAllTransactions();
+        // Charger les transactions personnels de l'utilisateur
+        projectTransactions = await _projectFinanceService.getAllProjectTransactions();
       }
-      
-      // Analyser toutes les transactions pour trouver les allocations
-      print('--- ANALYSE DES TRANSACTIONS ---');
-      for (var t in transactions) {
-        if (t.amount > 0 && (t.description?.toLowerCase().contains('allocation') ?? false)) {
-          print('Transaction potentielle d\'allocation: ${t.id}');
-          print('  Montant: ${t.amount} €');
-          print('  Description: ${t.description}');
-          print('  Catégorie: ${t.category}');
-          print('  Sous-catégorie: ${t.subcategory}');
-          print('  Budget ID: ${t.budgetId}');
-          print('  Projet ID: ${t.projectId}');
-        }
-      }
-      print('--- FIN ANALYSE ---');
       
       // Extraire les transactions récentes (les 20 dernières)
-      final recentTransactions = transactions.take(20).toList();
+      final recentTransactions = projectTransactions.take(20).toList();
       
       // Charger les projets
       final projects = await _projectService.getAllProjects();
       
-      // Trouver les projets avec dépassement de budget (alerte)
+      // Trouver les projets avec solde négatif (alerte)
       final projectsWithAlert = projects.where((project) {
         // Calculer les entrées et sorties d'argent pour ce projet
         double projectIncome = 0.0;
         double projectExpenses = 0.0;
         
-        for (final transaction in transactions) {
+        for (final transaction in projectTransactions) {
           if (transaction.projectId == project.id) {
-            if (transaction.amount > 0) {
-              projectIncome += transaction.amount;
+            if (transaction.isIncome) {
+              projectIncome += transaction.absoluteAmount;
             } else {
-              projectExpenses += transaction.amount.abs();
+              projectExpenses += transaction.absoluteAmount;
             }
           }
         }
         
-        // Recalculer le budget total en incluant les entrées
-        final totalBudget = (project.budgetAllocated ?? 0) + projectIncome;
-        
-        // Dépassement si dépenses > budget total (incluant entrées supplémentaires)
-        return projectExpenses > totalBudget;
+        // Un projet est en alerte si ses dépenses sont supérieures à ses revenus
+        return projectExpenses > projectIncome;
       }).toList();
       
       // Calculer les statistiques financières
       // Méthode 1: Calcul basé sur les current_amount des budgets et les transactions
-      final totalInitialBudget = budgets.fold(0.0, (sum, budget) => sum + budget.currentAmount);
-      final totalIncomeTransactions = transactions.where((t) => t.amount > 0).fold(0.0, (sum, t) => sum + t.amount);
-      final totalBudget = totalInitialBudget + totalIncomeTransactions;
-      final totalSpent = transactions.where((t) => t.amount < 0).fold(0.0, (sum, t) => sum + t.amount.abs());
-      final totalRemaining = totalBudget - totalSpent;
-      
-      // Vérification du calcul - si les soldes actuels sont corrects, ils devraient être égaux à totalRemaining
-      final totalCurrentAmount = budgets.fold(0.0, (sum, budget) => sum + budget.currentAmount);
-      print('Vérification totalRemaining: $totalRemaining vs totalCurrentAmount: $totalCurrentAmount');
+      final totalRevenues = projectTransactions.where((t) => t.isIncome).fold(0.0, (sum, t) => sum + t.absoluteAmount);
+      final totalExpenses = projectTransactions.where((t) => !t.isIncome).fold(0.0, (sum, t) => sum + t.absoluteAmount);
+      final totalBalance = totalRevenues - totalExpenses;
       
       setState(() {
-        _budgets = budgets;
+        _projectTransactions = projectTransactions;
         _projects = projects;
         _recentTransactions = recentTransactions;
-        _projectsWithBudgetAlert = projectsWithAlert;
-        _totalBudget = totalBudget;
-        _totalSpent = totalSpent;
-        _totalRemaining = totalRemaining;
+        _projectsWithBalanceAlert = projectsWithAlert;
+        _totalRevenues = totalRevenues;
+        _totalExpenses = totalExpenses;
+        _totalBalance = totalBalance;
         _isLoading = false;
       });
     } catch (e) {
@@ -221,11 +186,11 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
       appBar: AppBar(
         title: const Text('Tableau de bord financier'),
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(_isAdmin && _showTeamFinances && _selectedTeamId != null ? 85 : 48),
+          preferredSize: Size.fromHeight(_isAdmin && _selectedProjectId != null ? 85 : 48),
           child: Column(
             children: [
-              // Afficher le badge d'équipe si nécessaire
-              if (_isAdmin && _showTeamFinances && _selectedTeamId != null)
+              // Afficher le badge de projet si nécessaire
+              if (_isAdmin && _selectedProjectId != null)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -235,7 +200,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       const Text(
-                        'Équipe : ',
+                        'Projet : ',
                         style: TextStyle(
                           color: Colors.white70,
                           fontWeight: FontWeight.bold,
@@ -243,7 +208,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                       ),
                       Chip(
                         label: Text(
-                          _selectedTeamName,
+                          _selectedProjectName,
                           style: const TextStyle(
                             fontSize: 12, 
                             color: Colors.white,
@@ -274,20 +239,21 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                 ),
                 tabs: const [
                   Tab(text: 'Vue d\'ensemble'),
-                  Tab(text: 'Projets'),
+                  Tab(text: 'Finances des projets'),
                   Tab(text: 'Alertes'),
+                  Tab(text: 'Transactions'),
                 ],
               ),
             ],
           ),
         ),
         actions: [
-          // Affichage du sélecteur d'équipe uniquement pour les administrateurs
+          // Affichage du sélecteur de projet uniquement pour les administrateurs
           if (_isAdmin) 
             IconButton(
-              icon: Icon(_showTeamFinances ? Icons.people_alt : Icons.people_outline),
-              onPressed: _showTeamSelector,
-              tooltip: 'Gérer les finances d\'équipe',
+              icon: Icon(_showAllProjects ? Icons.people_alt : Icons.people_outline),
+              onPressed: _showProjectSelector,
+              tooltip: 'Gérer les finances de projet',
             ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -301,15 +267,15 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const BudgetFormScreen(),
+              builder: (context) => const TransactionFormScreen(),
             ),
           );
           
-          if (result == true) {
+          if (result != null) {
             _loadData();
           }
         },
-        tooltip: 'Ajouter un budget',
+        tooltip: 'Ajouter une transaction',
         child: const Icon(Icons.add),
       ),
       body: _isLoading
@@ -318,14 +284,15 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
               controller: _tabController,
               children: [
                 _buildOverviewTab(),
-                _buildProjectsTab(),
+                _buildProjectFinancesTab(),
                 _buildAlertsTab(),
+                _buildTransactionsTab(),
               ],
             ),
     );
   }
   
-  void _showTeamSelector() {
+  void _showProjectSelector() {
     showModalBottomSheet(
       context: context,
       builder: (context) {
@@ -350,12 +317,12 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
             ),
             const Divider(height: 1),
             ListTile(
-              title: const Text('Voir mes finances personnelles'),
-              leading: const Icon(Icons.person),
+              title: const Text('Voir tous les projets'),
+              leading: const Icon(Icons.people),
               onTap: () {
                 setState(() {
-                  _showTeamFinances = false;
-                  _selectedTeamId = null;
+                  _showAllProjects = true;
+                  _selectedProjectId = null;
                 });
                 Navigator.pop(context);
                 _loadData();
@@ -369,7 +336,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                   const Icon(Icons.people, color: Colors.blue),
                   const SizedBox(width: 8),
                   const Text(
-                    'Mes équipes',
+                    'Mes projets',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                     ),
@@ -377,17 +344,17 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                 ],
               ),
             ),
-            // Liste des équipes
-            ..._adminTeams.map((team) => ListTile(
-              title: Text(team.name),
+            // Liste des projets
+            ..._projects.map((project) => ListTile(
+              title: Text(project.name),
               leading: const Icon(Icons.group_work),
-              trailing: _selectedTeamId == team.id && _showTeamFinances
+              trailing: _selectedProjectId == project.id && !_showAllProjects
                   ? const Icon(Icons.check_circle, color: Colors.green)
                   : null,
               onTap: () {
                 setState(() {
-                  _showTeamFinances = true;
-                  _selectedTeamId = team.id;
+                  _showAllProjects = false;
+                  _selectedProjectId = project.id;
                 });
                 Navigator.pop(context);
                 _loadData();
@@ -416,28 +383,28 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
               children: [
                 Expanded(
                   child: _buildStatCard(
-                    'Budget total',
-                    currencyFormat.format(_totalBudget),
-                    Icons.account_balance,
-                    Colors.blue,
+                    'Revenus',
+                    currencyFormat.format(_totalRevenues),
+                    Icons.arrow_upward,
+                    Colors.green,
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: _buildStatCard(
                     'Dépenses',
-                    currencyFormat.format(_totalSpent),
-                    Icons.money_off,
-                    Colors.orange,
+                    currencyFormat.format(_totalExpenses),
+                    Icons.arrow_downward,
+                    Colors.red,
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: _buildStatCard(
-                    'Restant',
-                    currencyFormat.format(_totalRemaining),
+                    'Solde',
+                    currencyFormat.format(_totalBalance),
                     Icons.monetization_on,
-                    _totalRemaining >= 0 ? Colors.green : Colors.red,
+                    _totalBalance >= 0 ? Colors.green : Colors.red,
                   ),
                 ),
               ],
@@ -566,65 +533,6 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                 ],
               ),
             ),
-            
-            const SizedBox(height: 24),
-            
-            // Budgets actuels
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Budgets',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () async {
-                            final result = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const BudgetFormScreen(),
-                              ),
-                            );
-                            
-                            if (result == true) {
-                              _loadData();
-                            }
-                          },
-                          icon: const Icon(Icons.add),
-                          label: const Text('Ajouter'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  _budgets.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: Text('Aucun budget défini')),
-                        )
-                      : ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _budgets.length > 3 ? 3 : _budgets.length,
-                          separatorBuilder: (context, index) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            return _buildBudgetItem(_budgets[index]);
-                          },
-                        ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -682,7 +590,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
       Colors.amber,
     ];
     
-    for (final transaction in _recentTransactions.where((t) => t.amount < 0)) {
+    for (final transaction in _recentTransactions.where((t) => !t.isIncome)) {
       // Utiliser la sous-catégorie si disponible, sinon la catégorie
       String displayCategory;
       if (transaction.subcategory != null && transaction.subcategory!.isNotEmpty) {
@@ -698,7 +606,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
         }
       }
       
-      final amount = transaction.amount.abs();
+      final amount = transaction.absoluteAmount;
       
       if (expensesByCategory.containsKey(displayCategory)) {
         expensesByCategory[displayCategory] = expensesByCategory[displayCategory]! + amount;
@@ -720,7 +628,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     int colorIndex = 0;
     List<String> categories = expensesByCategory.keys.toList();
     expensesByCategory.forEach((category, amount) {
-      final percentage = (amount / _totalSpent) * 100;
+      final percentage = (amount / _totalExpenses) * 100;
       final isTouched = colorIndex == _touchedExpenseIndex;
       final double radius = isTouched ? 55 : 45;
       final double fontSize = isTouched ? 16.0 : 13.0;
@@ -851,12 +759,6 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     // Grouper les transactions par catégorie et sous-catégorie
     final Map<String, double> incomesByCategory = {};
     
-    // Ajouter le budget initial comme une catégorie
-    double totalInitial = _budgets.fold(0.0, (sum, budget) => sum + budget.currentAmount);
-    if (totalInitial > 0) {
-      incomesByCategory['Budget initial'] = totalInitial;
-    }
-    
     // Définition des couleurs
     final List<Color> colors = [
       Colors.blue,
@@ -869,7 +771,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
       Colors.amber,
     ];
     
-    for (final transaction in _recentTransactions.where((t) => t.amount > 0)) {
+    for (final transaction in _recentTransactions.where((t) => t.isIncome)) {
       // Utiliser la sous-catégorie si disponible, sinon la catégorie
       String displayCategory;
       if (transaction.subcategory != null && transaction.subcategory!.isNotEmpty) {
@@ -885,7 +787,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
         }
       }
       
-      final amount = transaction.amount;
+      final amount = transaction.absoluteAmount;
       
       if (incomesByCategory.containsKey(displayCategory)) {
         incomesByCategory[displayCategory] = incomesByCategory[displayCategory]! + amount;
@@ -907,7 +809,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     int colorIndex = 0;
     List<String> categories = incomesByCategory.keys.toList();
     incomesByCategory.forEach((category, amount) {
-      final percentage = (amount / _totalBudget) * 100;
+      final percentage = (amount / _totalRevenues) * 100;
       final isTouched = colorIndex == _touchedIncomeIndex;
       final double radius = isTouched ? 55 : 45;
       final double fontSize = isTouched ? 16.0 : 13.0;
@@ -1034,9 +936,9 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     );
   }
 
-  Widget _buildTransactionItem(BudgetTransaction transaction) {
+  Widget _buildTransactionItem(ProjectTransaction transaction) {
     final NumberFormat currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
-    final bool isIncome = transaction.amount > 0;
+    final bool isIncome = transaction.isIncome;
     final color = isIncome ? Colors.green : Colors.red;
     
     return ListTile(
@@ -1059,7 +961,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
       ),
       trailing: Text(
-        currencyFormat.format(transaction.amount),
+        currencyFormat.format(transaction.absoluteAmount),
         style: TextStyle(
           fontWeight: FontWeight.bold,
           color: color,
@@ -1082,115 +984,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
     );
   }
 
-  Widget _buildBudgetItem(Budget budget) {
-    final NumberFormat currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
-    
-    // Afficher des informations sur le budget pour le débogage
-    print('Débogage budget ${budget.name} (id: ${budget.id}):');
-    print('- Current amount: ${budget.currentAmount}');
-    print('- Initial amount: ${budget.initialAmount}');
-    
-    // Calculer le montant des entrées d'argent sur ce budget
-    final income = _recentTransactions
-        .where((t) => t.budgetId == budget.id && t.amount > 0 && t.subcategory != 'Allocation')
-        .fold(0.0, (sum, t) => sum + t.amount);
-    
-    // Calculer les allocations spécifiquement
-    // Pour les allocations, on cherche les transactions où la description contient le nom du budget
-    // car les allocations sont liées aux projets, pas aux budgets
-    final allocations = _recentTransactions
-        .where((t) => 
-          t.amount > 0 && 
-          t.subcategory == 'Allocation' && 
-          (t.description?.contains(budget.name) ?? false))
-        .fold(0.0, (sum, t) => sum + t.amount);
-    
-    print('- Revenus (hors allocations): $income €');
-    print('- Allocations liées au nom "${budget.name}": $allocations €');
-    
-    // Calculer le montant consommé sur ce budget
-    final consumed = _recentTransactions
-        .where((t) => t.budgetId == budget.id && t.amount < 0)
-        .fold(0.0, (sum, t) => sum + t.amount.abs());
-    
-    print('- Dépenses: $consumed €');
-    
-    // Budget total = courant + entrées + allocations
-    final totalBudget = budget.currentAmount + income + allocations;
-    
-    print('- Budget total calculé: $totalBudget €');
-    
-    // Calculer le pourcentage d'utilisation
-    final percentage = totalBudget > 0 
-        ? (consumed / totalBudget) * 100 
-        : 0.0;
-    
-    // Limiter le pourcentage à 100 pour l'affichage
-    final displayPercentage = percentage > 100 ? 100.0 : percentage;
-    
-    return ListTile(
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              budget.name,
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit, size: 18),
-            constraints: const BoxConstraints(),
-            padding: const EdgeInsets.only(left: 8),
-            onPressed: () async {
-              final result = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => BudgetFormScreen(budget: budget),
-                ),
-              );
-              
-              if (result == true) {
-                _loadData();
-              }
-            },
-          ),
-        ],
-      ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 4),
-          LinearProgressIndicator(
-            value: displayPercentage / 100,
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(
-              percentage > 80 
-                  ? (percentage > 100 ? Colors.red : Colors.orange)
-                  : Colors.green,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${currencyFormat.format(consumed)} sur ${currencyFormat.format(totalBudget)} (${percentage.toStringAsFixed(1)}%)',
-            style: TextStyle(
-              fontSize: 12,
-              color: percentage > 100 ? Colors.red : Colors.grey[600],
-            ),
-          ),
-        ],
-      ),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => TransactionListScreen(budgetId: budget.id),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildProjectsTab() {
+  Widget _buildProjectFinancesTab() {
     if (_projects.isEmpty) {
       return const Center(
         child: Text('Aucun projet trouvé'),
@@ -1205,55 +999,44 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
         padding: const EdgeInsets.all(16),
         itemCount: _projects.length,
         itemBuilder: (context, index) {
-          return _buildProjectBudgetCard(_projects[index]);
+          return _buildProjectFinanceCard(_projects[index]);
         },
       ),
     );
   }
   
-  Widget _buildProjectBudgetCard(Project project) {
+  Widget _buildProjectFinanceCard(Project project) {
     final NumberFormat currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
+    
+    // Filtrer les transactions pour ce projet
+    final projectTransactionsList = _projectTransactions.where(
+      (transaction) => transaction.projectId == project.id
+    ).toList();
     
     // Calculer les entrées et sorties d'argent pour ce projet
     double projectIncome = 0.0;
     double projectExpenses = 0.0;
-    for (final transaction in _recentTransactions) {
-      if (transaction.projectId == project.id) {
-        if (transaction.amount > 0) {
-          projectIncome += transaction.amount;
-        } else {
-          projectExpenses += transaction.amount.abs();
-        }
+    
+    for (final transaction in projectTransactionsList) {
+      if (transaction.isIncome) {
+        projectIncome += transaction.absoluteAmount;
+      } else {
+        projectExpenses += transaction.absoluteAmount;
       }
     }
     
-    // Recalculer le budget total en incluant les entrées
-    final totalBudget = projectIncome;
+    // Calculer le solde (revenus - dépenses)
+    final balance = projectIncome - projectExpenses;
     
-    // Calculer le montant restant (budget total - dépenses)
-    final remainingBudget = totalBudget - projectExpenses;
-    
-    // Calculer le pourcentage d'utilisation
-    final percentage = totalBudget > 0 
-        ? (projectExpenses / totalBudget) * 100 
-        : 0.0;
-    
-    // Déterminer la couleur en fonction du pourcentage
-    final Color statusColor;
-    if (percentage > 100) {
-      statusColor = Colors.red;
-    } else if (percentage > 80) {
-      statusColor = Colors.orange;
-    } else {
-      statusColor = Colors.green;
-    }
+    // Déterminer la couleur en fonction du solde
+    Color statusColor = balance >= 0 ? Colors.green : Colors.red;
     
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 3,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: percentage > 100 
+        side: balance < 0
             ? const BorderSide(color: Colors.red, width: 1.5)
             : BorderSide.none,
       ),
@@ -1264,6 +1047,12 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
           children: [
             Row(
               children: [
+                const Icon(
+                  Icons.account_balance,
+                  color: Colors.blue,
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     project.name,
@@ -1275,7 +1064,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (percentage > 100)
+                if (balance < 0)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
@@ -1288,7 +1077,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                         Icon(Icons.warning, size: 16, color: Colors.red[700]),
                         const SizedBox(width: 4),
                         Text(
-                          'Dépassement',
+                          'Solde négatif',
                           style: TextStyle(
                             color: Colors.red[700],
                             fontWeight: FontWeight.bold,
@@ -1301,81 +1090,95 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
               ],
             ),
             const SizedBox(height: 16),
-            LinearProgressIndicator(
-              value: percentage > 100 ? 1.0 : percentage / 100,
-              backgroundColor: Colors.grey[200],
-              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
-              minHeight: 8,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            const SizedBox(height: 8),
+            
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Budget alloué: ${currencyFormat.format(totalBudget)}',
-                  style: const TextStyle(fontSize: 14),
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.arrow_upward, color: Colors.green, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Revenus: ${currencyFormat.format(projectIncome)}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ),
                 ),
-                Text(
-                  '${percentage.toStringAsFixed(1)}%',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: statusColor,
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.arrow_downward, color: Colors.red, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Dépenses: ${currencyFormat.format(projectExpenses)}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 Text(
-                  'Dépenses: ${currencyFormat.format(projectExpenses)}',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                Text(
-                  'Restant: ${currencyFormat.format(remainingBudget)}',
+                  'Solde: ${currencyFormat.format(balance)}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: remainingBudget < 0 ? Colors.red : Colors.green,
+                    fontSize: 16,
+                    color: balance < 0 ? Colors.red : Colors.green,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.receipt_long, size: 16),
-                  label: const Text('Transactions'),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TransactionListScreen(projectId: project.id),
-                      ),
-                    );
-                  },
+                Text(
+                  '${projectTransactionsList.length} transactions',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 14,
+                  ),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Transaction'),
-                  onPressed: () async {
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TransactionFormScreen(
-                          projectId: project.id,
-                        ),
-                      ),
-                    );
-                    
-                    if (result != null) {
-                      _loadData();
-                    }
-                  },
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.receipt_long, size: 16),
+                      label: const Text('Transactions'),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TransactionListScreen(projectId: project.id),
+                          ),
+                        ).then((_) => _loadData());
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Transaction'),
+                      onPressed: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ProjectTransactionScreen(
+                              projectId: project.id,
+                            ),
+                          ),
+                        );
+                        
+                        if (result == true) {
+                          _loadData();
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1386,7 +1189,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
   }
   
   Widget _buildAlertsTab() {
-    if (_projectsWithBudgetAlert.isEmpty) {
+    if (_projectsWithBalanceAlert.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1422,41 +1225,34 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
       },
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _projectsWithBudgetAlert.length,
+        itemCount: _projectsWithBalanceAlert.length,
         itemBuilder: (context, index) {
-          final project = _projectsWithBudgetAlert[index];
-          return _buildBudgetAlertCard(project);
+          final project = _projectsWithBalanceAlert[index];
+          return _buildBalanceAlertCard(project);
         },
       ),
     );
   }
   
-  Widget _buildBudgetAlertCard(Project project) {
+  Widget _buildBalanceAlertCard(Project project) {
     final NumberFormat currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
     
     // Calculer les entrées et sorties d'argent pour ce projet
     double projectIncome = 0.0;
     double projectExpenses = 0.0;
-    for (final transaction in _recentTransactions) {
+    for (final transaction in _projectTransactions) {
       if (transaction.projectId == project.id) {
-        if (transaction.amount > 0) {
-          projectIncome += transaction.amount;
+        if (transaction.isIncome) {
+          projectIncome += transaction.absoluteAmount;
         } else {
-          projectExpenses += transaction.amount.abs();
+          projectExpenses += transaction.absoluteAmount;
         }
       }
     }
     
-    // Recalculer le budget total en incluant les entrées
-    final totalBudget = (project.budgetAllocated ?? 0) + projectIncome;
-    
-    // Calculer le pourcentage d'utilisation
-    final percentage = totalBudget > 0 
-        ? (projectExpenses / totalBudget) * 100 
-        : 0.0;
-    
-    // Calculer le montant du dépassement
-    final overBudgetAmount = projectExpenses - totalBudget > 0 ? projectExpenses - totalBudget : 0;
+    // Calculer le solde
+    final balance = projectIncome - projectExpenses;
+    final negativeBalance = balance < 0 ? balance.abs() : 0;
     
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1480,7 +1276,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Alerte de dépassement: ${project.name}',
+                    'Alerte de solde négatif: ${project.name}',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -1502,7 +1298,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Dépassement: ${currencyFormat.format(overBudgetAmount)}',
+                    'Solde négatif: ${currencyFormat.format(-negativeBalance)}',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Colors.red,
@@ -1511,22 +1307,11 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Budget initial: ${currencyFormat.format(project.budgetAllocated ?? 0)}',
+                    'Revenus: ${currencyFormat.format(projectIncome)}',
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Entrées supplémentaires: ${currencyFormat.format(projectIncome)}',
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Dépenses actuelles: ${currencyFormat.format(projectExpenses)}',
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Pourcentage utilisé: ${percentage.toStringAsFixed(1)}%',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                    ),
+                    'Dépenses: ${currencyFormat.format(projectExpenses)}',
                   ),
                 ],
               ),
@@ -1540,9 +1325,9 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
               ),
             ),
             const SizedBox(height: 8),
-            const Text('• Réviser le budget alloué au projet'),
-            const Text('• Vérifier les dépenses récentes'),
-            const Text('• Discuter des ajustements avec l\'équipe'),
+            const Text('• Augmenter les revenus du projet'),
+            const Text('• Réduire les dépenses si possible'),
+            const Text('• Vérifier les transactions récentes'),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -1556,26 +1341,53 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                       MaterialPageRoute(
                         builder: (context) => TransactionListScreen(projectId: project.id),
                       ),
-                    );
+                    ).then((_) => _loadData());
                   },
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton.icon(
-                  icon: const Icon(Icons.visibility, size: 16),
-                  label: const Text('Détails du projet'),
-                  onPressed: () {
-                    Navigator.push(
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Ajouter un revenu'),
+                  onPressed: () async {
+                    final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => ProjectDetailScreen(projectId: project.id),
+                        builder: (context) => ProjectTransactionScreen(
+                          projectId: project.id,
+                        ),
                       ),
                     );
+                    
+                    if (result == true) {
+                      _loadData();
+                    }
                   },
                 ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+  
+  Widget _buildTransactionsTab() {
+    if (_projectTransactions.isEmpty) {
+      return const Center(
+        child: Text('Aucune transaction trouvée'),
+      );
+    }
+    
+    return RefreshIndicator(
+      onRefresh: () async {
+        await _loadData();
+      },
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _projectTransactions.length,
+        itemBuilder: (context, index) {
+          return _buildTransactionItem(_projectTransactions[index]);
+        },
       ),
     );
   }

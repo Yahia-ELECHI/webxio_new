@@ -71,7 +71,7 @@ class Phase {
       'status': status,
       'budget_allocated': budgetAllocated,
       'budget_consumed': budgetConsumed,
-      'project_name': projectName,
+      // 'project_name' est supprimé car il n'existe pas dans la table de la base de données
     };
   }
 

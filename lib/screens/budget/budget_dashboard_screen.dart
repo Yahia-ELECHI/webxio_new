@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../models/budget_model.dart';
-import '../../models/budget_transaction_model.dart';
+import '../../models/project_transaction_model.dart';
 import '../../services/budget_service.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/error_message.dart';
@@ -20,7 +20,7 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   List<Budget> _budgets = [];
-  List<BudgetTransaction> _recentTransactions = [];
+  List<ProjectTransaction> _recentTransactions = [];
   Map<String, dynamic> _budgetStatistics = {};
   
   final NumberFormat _currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
@@ -40,7 +40,7 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
     try {
       final budgets = await _budgetService.getAllBudgets();
       Map<String, dynamic> statistics = {};
-      List<BudgetTransaction> transactions = [];
+      List<ProjectTransaction> transactions = [];
       
       if (budgets.isNotEmpty) {
         statistics = await _budgetService.getBudgetStatistics();
@@ -551,7 +551,7 @@ class _BudgetDashboardScreenState extends State<BudgetDashboardScreen> {
     );
   }
 
-  Widget _buildTransactionItem(BudgetTransaction transaction) {
+  Widget _buildTransactionItem(ProjectTransaction transaction) {
     final bool isIncome = transaction.amount > 0;
     final Color amountColor = isIncome ? Colors.green : Colors.red;
     final IconData icon = isIncome ? Icons.arrow_upward : Icons.arrow_downward;

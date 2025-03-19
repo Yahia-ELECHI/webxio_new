@@ -19,6 +19,7 @@ import 'screens/teams/teams_screen.dart';
 import 'screens/teams/invitations_screen.dart';
 import 'screens/teams/invitation_acceptance_screen.dart';
 import 'screens/budget/finance_dashboard_screen.dart';
+import 'screens/finance/project_finance_dashboard_screen.dart'; // Nouvel emplacement plus approprié
 import 'screens/notifications/notifications_screen.dart';
 import 'widgets/sidebar_menu.dart';
 import 'widgets/islamic_patterns.dart';
@@ -340,7 +341,7 @@ class _MainAppScreenState extends State<MainAppScreen> {
     const TeamsScreen(),
     const CalendarScreen(),
     const StatisticsScreen(),
-    const FinanceDashboardScreen(), // Ajout du tableau de bord financier
+    const FinanceDashboardScreen(), // Tableau de bord financier basé sur les projets
     const ProfileScreen(),
   ];
   
@@ -395,10 +396,10 @@ class _MainAppScreenState extends State<MainAppScreen> {
               items: const [
                 BottomNavigationBarItem(
                   icon: Icon(Icons.dashboard),
-                  label: 'Accueil',
+                  label: 'Tableau de bord',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(Icons.folder),
+                  icon: Icon(Icons.assignment),
                   label: 'Projets',
                 ),
                 BottomNavigationBarItem(

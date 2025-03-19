@@ -3,7 +3,7 @@ import '../../models/project_model.dart';
 import '../../models/task_model.dart';
 import '../../models/team_model.dart';
 import '../../models/phase_model.dart';
-import '../../models/budget_transaction_model.dart';
+import '../../models/project_transaction_model.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/user_service.dart';
@@ -14,8 +14,7 @@ import '../../widgets/budget_summary_widget.dart';
 import '../tasks/task_form_screen.dart';
 import '../tasks/task_detail_screen.dart';
 import '../budget/budget_allocation_screen.dart';
-import '../budget/transaction_form_screen.dart';
-import '../budget/transaction_list_screen.dart';
+import '../finance/project_transaction_screen.dart';
 import 'phases/phases_screen.dart';
 import 'project_form_screen.dart';
 import '../../widgets/custom_app_bar.dart';
@@ -43,7 +42,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   List<Task> _tasks = [];
   List<Team> _projectTeams = [];
   List<Phase> _projectPhases = [];
-  List<BudgetTransaction> _projectTransactions = [];
+  List<ProjectTransaction> _projectTransactions = [];
   
   bool _isLoading = true;
   bool _isLoadingTeams = true;
@@ -1176,23 +1175,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            TextButton.icon(
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => BudgetAllocationScreen(
-                      projectId: _project!.id,
-                    ),
-                  ),
-                );
-                if (result == true) {
-                  _loadProjectBudget();
-                }
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('Ajouter un budget'),
-            ),
+            // Le bouton "Ajouter un budget" a été supprimé car nous utilisons maintenant une approche par projet
           ],
         ),
         const SizedBox(height: 16),
@@ -1211,7 +1194,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'Aucun budget défini pour ce projet',
+                    'Aucune transaction financière pour ce projet',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -1219,7 +1202,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Les budgets vous permettent de gérer les dépenses de votre projet',
+                    'Les transactions vous permettent de gérer les revenus et dépenses de votre projet',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.grey,
@@ -1231,7 +1214,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       final result = await Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => BudgetAllocationScreen(
+                          builder: (context) => ProjectTransactionScreen(
                             projectId: _project!.id,
                           ),
                         ),
@@ -1241,7 +1224,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       }
                     },
                     icon: const Icon(Icons.add),
-                    label: const Text('Ajouter un budget'),
+                    label: const Text('Ajouter une transaction'),
                   ),
                 ],
               ),

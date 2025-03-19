@@ -1,22 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../models/budget_transaction_model.dart';
+import '../models/project_transaction_model.dart';
 import '../screens/budget/transaction_form_screen.dart';
 import '../screens/budget/transaction_list_screen.dart';
 
 class BudgetSummaryWidget extends StatelessWidget {
   final double? budgetAllocated;
   final double? budgetConsumed;
-  final List<BudgetTransaction>? transactions;
+  final List<ProjectTransaction>? transactions;
   final String? projectId;
   final String? phaseId;
   final String? taskId;
   final bool showAddButton;
   final VoidCallback? onAddPressed;
   final VoidCallback? onTap;
-  final Function(BudgetTransaction)? onTransactionAdded;
-  final Function(BudgetTransaction)? onTransactionUpdated;
-  final Function(BudgetTransaction)? onTransactionDeleted;
+  final Function(ProjectTransaction)? onTransactionAdded;
+  final Function(ProjectTransaction)? onTransactionUpdated;
+  final Function(ProjectTransaction)? onTransactionDeleted;
 
   const BudgetSummaryWidget({
     Key? key,
@@ -172,7 +172,7 @@ class BudgetSummaryWidget extends StatelessWidget {
                       ),
                     ).then((result) {
                       if (result != null) {
-                        if (result is BudgetTransaction && onTransactionAdded != null) {
+                        if (result is ProjectTransaction && onTransactionAdded != null) {
                           // Transaction créée ou mise à jour
                           onTransactionAdded!(result);
                         } else if (result is Map && result['deleted'] == true && onTransactionDeleted != null) {
@@ -180,13 +180,14 @@ class BudgetSummaryWidget extends StatelessWidget {
                           final String transactionId = result['transactionId'];
                           final deletedTransaction = transactions?.firstWhere(
                             (t) => t.id == transactionId,
-                            orElse: () => BudgetTransaction(
+                            orElse: () => ProjectTransaction(
                               id: transactionId,
-                              budgetId: '',
+                              projectId: projectId ?? '',
+                              projectName: '',
                               amount: 0,
                               description: '',
                               transactionDate: DateTime.now(),
-                              category: '',
+                              category: 'other',
                               createdAt: DateTime.now(),
                               createdBy: '',
                             ),

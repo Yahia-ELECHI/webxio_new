@@ -4,7 +4,7 @@ import '../../models/task_model.dart';
 import '../../models/team_model.dart';
 import '../../models/task_history_model.dart';
 import '../../models/attachment_model.dart';
-import '../../models/budget_transaction_model.dart';
+import '../../models/project_transaction_model.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/user_service.dart';
@@ -12,8 +12,7 @@ import '../../services/attachment_service.dart';
 import '../../services/budget_service.dart';
 import '../../widgets/budget_summary_widget.dart';
 import '../../widgets/custom_app_bar.dart';
-import '../budget/transaction_form_screen.dart';
-import '../budget/transaction_list_screen.dart';
+import '../finance/project_transaction_screen.dart';
 import 'task_form_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -55,7 +54,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _loadingHistory = true;
   List<Attachment> _attachments = [];
   bool _loadingAttachments = true;
-  List<BudgetTransaction> _taskTransactions = [];
+  List<ProjectTransaction> _taskTransactions = [];
   bool _loadingBudget = true;
 
   @override
@@ -437,10 +436,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           final result = await Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => TransactionFormScreen(
+                              builder: (context) => ProjectTransactionScreen(
                                 taskId: _task.id,
-                                phaseId: _task.phaseId,
                                 projectId: _task.projectId,
+                                phaseId: _task.phaseId,
                               ),
                             ),
                           );

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../models/phase_model.dart';
 import '../../../models/project_model.dart';
 import '../../../models/task_model.dart';
-import '../../../models/budget_transaction_model.dart';
+import '../../../models/project_transaction_model.dart';
 import '../../../services/phase_service/phase_service.dart';
 import '../../../services/project_service/project_service.dart';
 import '../../../services/budget_service.dart';
@@ -10,8 +10,7 @@ import '../../../widgets/islamic_patterns.dart';
 import '../../../widgets/budget_summary_widget.dart';
 import '../../tasks/task_form.dart';
 import '../../tasks/task_detail_screen.dart';
-import '../../budget/transaction_form_screen.dart';
-import '../../budget/transaction_list_screen.dart';
+import '../../finance/project_transaction_screen.dart';
 import 'phase_form.dart';
 
 class PhaseDetailScreen extends StatefulWidget {
@@ -35,7 +34,7 @@ class _PhaseDetailScreenState extends State<PhaseDetailScreen> {
   
   late Phase _phase;
   List<Task> _tasks = [];
-  List<BudgetTransaction> _phaseTransactions = [];
+  List<ProjectTransaction> _phaseTransactions = [];
   bool _isLoading = true;
   bool _isLoadingBudget = true;
   
@@ -315,7 +314,7 @@ class _PhaseDetailScreenState extends State<PhaseDetailScreen> {
                             final result = await Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => TransactionFormScreen(
+                                builder: (context) => ProjectTransactionScreen(
                                   phaseId: _phase.id,
                                   projectId: widget.project.id,
                                 ),
