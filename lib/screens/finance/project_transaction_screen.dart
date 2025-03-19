@@ -44,31 +44,28 @@ class _ProjectTransactionScreenState extends State<ProjectTransactionScreen> {
   
   Project? _selectedProject;
   
-  String _selectedCategory = 'expense';
-  String? _selectedSubcategory;
+  String _transactionType = 'expense'; // Type de transaction : 'income' ou 'expense'
+  String _selectedCategory = 'Ressources'; // Catégorie
+  String? _selectedSubcategory; // Sous-catégorie
   DateTime _transactionDate = DateTime.now();
   
   final NumberFormat _currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
   
   // Catégories et sous-catégories
-  final Map<String, List<String>> _categoryOptions = {
-    'expense': [
-      'Matériaux',
-      'Main-d\'œuvre',
-      'Équipement',
-      'Services',
-      'Frais administratifs',
-      'Transport',
-      'Imprévus',
-      'Autres dépenses'
-    ],
-    'income': [
-      'Paiement client',
-      'Subvention',
-      'Remboursement',
-      'Revenu divers'
-    ],
+  final Map<String, List<String>> _categories = {
+    'Entrée': ['Don', 'Virement','Vente de livres','Cours en ligne', 'Cagnotte en ligne', 'Waqf','Remboursement', 'Dotation', 'Subvention', 'Autre'],
+    'Construction': ['Terrassement', 'Fondations', 'Gros œuvre', 'Second œuvre', 'Toiture', 'Façades', 'Aménagements extérieurs', 'Équipements techniques', 'Finitions', 'Mobilier', 'Honoraires architecte', 'Études techniques', 'Permis et autorisations', 'Autre'],
+    'Éducatif': ['Matériel pédagogique', 'Bibliothèque', 'Équipement multimédia', 'Fournitures scolaires', 'Livres religieux', 'Formation enseignants', 'Activités parascolaires', 'Autre'],
+    'Ressources': ['Matériel', 'Licences logicielles', 'Formation', 'Services externes', 'Équipements spécialisés', 'Autre'],
+    'Personnel': ['Salaires', 'Primes', 'Freelance', 'Consultants', 'Corps enseignant', 'Personnel administratif', 'Agents d\'entretien', 'Autre'],
+    'Marketing': ['Publicité', 'Relations publiques', 'Événements', 'Supports marketing', 'Journées portes ouvertes', 'Communication digitale', 'Autre'],
+    'Opérations': ['Location', 'Utilities', 'Assurances', 'Maintenance', 'Entretien bâtiment', 'Sécurité', 'Autre'],
+    'Finance': ['Taxes', 'Frais bancaires', 'Intérêts', 'Assurances spécifiques', 'Autre'],
+    'Autre': ['Divers'],
   };
+  List<String> _subcategories = [];
+  List<String> _entriesCategories = ['Entrée'];
+  List<String> _expensesCategories = ['Construction', 'Éducatif', 'Ressources', 'Personnel', 'Marketing', 'Opérations', 'Finance', 'Autre'];
 
   @override
   void initState() {
@@ -76,7 +73,16 @@ class _ProjectTransactionScreenState extends State<ProjectTransactionScreen> {
     _selectedProjectId = widget.initialProjectId ?? widget.projectId;
     _selectedPhaseId = widget.phaseId;
     _selectedTaskId = widget.taskId;
+    _updateSubcategories(_selectedCategory);
     _loadData();
+  }
+
+  void _updateSubcategories(String category) {
+    setState(() {
+      _selectedCategory = category;
+      _subcategories = _categories[category] ?? [];
+      _selectedSubcategory = _subcategories.isNotEmpty ? _subcategories.first : null;
+    });
   }
 
   Future<void> _loadData() async {
@@ -101,29 +107,20 @@ class _ProjectTransactionScreenState extends State<ProjectTransactionScreen> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Erreur lors du chargement des données: $e';
         _isLoading = false;
+        _errorMessage = 'Erreur lors du chargement des données: ${e.toString()}';
       });
     }
   }
 
   void _updateSelectedItems() {
-    if (_projects.isEmpty) {
-      _selectedProject = null;
-    } else {
+    if (_selectedProjectId != null) {
       _selectedProject = _projects.firstWhere(
-        (project) => project.id == _selectedProjectId,
-        orElse: () => _projects.first,
+        (p) => p.id == _selectedProjectId,
+        orElse: () => _projects.isNotEmpty ? _projects.first : null as Project,
       );
-    }
-    
-    if (_selectedProject != null) {
-      _selectedProjectId = _selectedProject!.id;
       
-      // Initialiser la sous-catégorie si elle n'est pas définie
-      if (_selectedSubcategory == null && _categoryOptions[_selectedCategory]!.isNotEmpty) {
-        _selectedSubcategory = _categoryOptions[_selectedCategory]!.first;
-      }
+      _selectedProjectId = _selectedProject!.id;
     }
   }
 
@@ -144,12 +141,15 @@ class _ProjectTransactionScreenState extends State<ProjectTransactionScreen> {
         final amount = double.parse(_amountController.text.replaceAll(',', '.'));
         final note = _noteController.text.trim();
         
+        // Créer la transaction en tenant compte du type (entrée/sortie)
+        double finalAmount = _transactionType == 'expense' ? -amount : amount;
+        
         // Créer la transaction
         await _financeService.createTransaction(
           _selectedProjectId!,
           _selectedPhaseId,
           _selectedTaskId,
-          amount,
+          finalAmount,
           note,
           _transactionDate,
           _selectedCategory,
@@ -231,12 +231,11 @@ class _ProjectTransactionScreenState extends State<ProjectTransactionScreen> {
                               child: RadioListTile<String>(
                                 title: const Text('Dépense'),
                                 value: 'expense',
-                                groupValue: _selectedCategory,
+                                groupValue: _transactionType,
                                 activeColor: Theme.of(context).primaryColor,
                                 onChanged: (value) {
                                   setState(() {
-                                    _selectedCategory = value!;
-                                    _selectedSubcategory = _categoryOptions[value]!.first;
+                                    _transactionType = value!;
                                   });
                                 },
                               ),
@@ -245,12 +244,11 @@ class _ProjectTransactionScreenState extends State<ProjectTransactionScreen> {
                               child: RadioListTile<String>(
                                 title: const Text('Revenu'),
                                 value: 'income',
-                                groupValue: _selectedCategory,
+                                groupValue: _transactionType,
                                 activeColor: Theme.of(context).primaryColor,
                                 onChanged: (value) {
                                   setState(() {
-                                    _selectedCategory = value!;
-                                    _selectedSubcategory = _categoryOptions[value]!.first;
+                                    _transactionType = value!;
                                   });
                                 },
                               ),
@@ -307,8 +305,34 @@ class _ProjectTransactionScreenState extends State<ProjectTransactionScreen> {
                             border: OutlineInputBorder(),
                             prefixIcon: Icon(Icons.category),
                           ),
+                          value: _selectedCategory,
+                          items: _categories.keys.map((category) {
+                            return DropdownMenuItem<String>(
+                              value: category,
+                              child: Text(category),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _updateSubcategories(value!);
+                            });
+                          },
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Veuillez sélectionner une catégorie';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        DropdownButtonFormField<String>(
+                          decoration: const InputDecoration(
+                            labelText: 'Sous-catégorie',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.category),
+                          ),
                           value: _selectedSubcategory,
-                          items: _categoryOptions[_selectedCategory]!.map((subcategory) {
+                          items: _subcategories.map((subcategory) {
                             return DropdownMenuItem<String>(
                               value: subcategory,
                               child: Text(subcategory),
@@ -321,7 +345,7 @@ class _ProjectTransactionScreenState extends State<ProjectTransactionScreen> {
                           },
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'Veuillez sélectionner une catégorie';
+                              return 'Veuillez sélectionner une sous-catégorie';
                             }
                             return null;
                           },

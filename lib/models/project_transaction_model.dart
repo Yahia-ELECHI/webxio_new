@@ -11,8 +11,9 @@ class ProjectTransaction {
   final double amount;
   final String description;
   final DateTime transactionDate;
-  final String category;
-  final String? subcategory;
+  final String transactionType; 
+  final String category; 
+  final String? subcategory; 
   final DateTime createdAt;
   final DateTime? updatedAt;
   final String createdBy;
@@ -28,6 +29,7 @@ class ProjectTransaction {
     required this.amount,
     required this.description,
     required this.transactionDate,
+    required this.transactionType,
     required this.category,
     this.subcategory,
     required this.createdAt,
@@ -50,6 +52,7 @@ class ProjectTransaction {
           : json['amount'] as double,
       description: json['description'] as String,
       transactionDate: DateTime.parse(json['transaction_date'] as String),
+      transactionType: json['transaction_type'] as String, 
       category: json['category'] as String,
       subcategory: json['subcategory'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -73,6 +76,7 @@ class ProjectTransaction {
       'amount': amount,
       'description': description,
       'transaction_date': transactionDate.toIso8601String(),
+      'transaction_type': transactionType, 
       'category': category,
       'subcategory': subcategory,
       'created_at': createdAt.toIso8601String(),
@@ -93,6 +97,7 @@ class ProjectTransaction {
     double? amount,
     String? description,
     DateTime? transactionDate,
+    String? transactionType, 
     String? category,
     String? subcategory,
     DateTime? createdAt,
@@ -110,6 +115,7 @@ class ProjectTransaction {
       amount: amount ?? this.amount,
       description: description ?? this.description,
       transactionDate: transactionDate ?? this.transactionDate,
+      transactionType: transactionType ?? this.transactionType, 
       category: category ?? this.category,
       subcategory: subcategory ?? this.subcategory,
       createdAt: createdAt ?? this.createdAt,
@@ -120,12 +126,12 @@ class ProjectTransaction {
 
   // Vérifier si c'est une entrée d'argent
   bool get isIncome {
-    return category == 'income';
+    return transactionType == 'income'; 
   }
 
   // Vérifier si c'est une sortie d'argent
   bool get isExpense {
-    return category == 'expense';
+    return transactionType == 'expense'; 
   }
 
   // Obtenir la valeur absolue du montant
@@ -158,6 +164,7 @@ class ProjectTransaction {
           : json['amount'] as double,
       description: json['description'] as String,
       transactionDate: DateTime.parse(json['transaction_date'] as String),
+      transactionType: json['transaction_type'] as String, 
       category: json['category'] as String,
       subcategory: json['subcategory'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -169,54 +176,54 @@ class ProjectTransaction {
   }
 }
 
-// Énumération pour les catégories de transactions
-enum TransactionCategory {
+// Énumération pour les types de transactions
+enum TransactionType { 
   income,
   expense;
 
   String get displayName {
     switch (this) {
-      case TransactionCategory.income:
+      case TransactionType.income:
         return 'Entrée';
-      case TransactionCategory.expense:
+      case TransactionType.expense:
         return 'Sortie';
     }
   }
 
   String toValue() {
     switch (this) {
-      case TransactionCategory.income:
+      case TransactionType.income:
         return 'income';
-      case TransactionCategory.expense:
+      case TransactionType.expense:
         return 'expense';
     }
   }
 
-  static TransactionCategory fromValue(String value) {
+  static TransactionType fromValue(String value) {
     switch (value) {
       case 'income':
-        return TransactionCategory.income;
+        return TransactionType.income;
       case 'expense':
-        return TransactionCategory.expense;
+        return TransactionType.expense;
       default:
-        return TransactionCategory.expense;
+        return TransactionType.expense;
     }
   }
 
   Color get color {
     switch (this) {
-      case TransactionCategory.income:
+      case TransactionType.income:
         return Colors.green;
-      case TransactionCategory.expense:
+      case TransactionType.expense:
         return Colors.red;
     }
   }
 
   IconData get icon {
     switch (this) {
-      case TransactionCategory.income:
+      case TransactionType.income:
         return Icons.arrow_upward;
-      case TransactionCategory.expense:
+      case TransactionType.expense:
         return Icons.arrow_downward;
     }
   }

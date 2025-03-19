@@ -72,7 +72,9 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
       // Extraire toutes les catégories uniques
       Set<String> categorySet = {'Toutes'};
       for (var transaction in transactions) {
-        categorySet.add(transaction.category);
+        if (transaction.category.isNotEmpty) {
+          categorySet.add(transaction.category);
+        }
       }
       
       setState(() {
@@ -98,9 +100,9 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     
     // Appliquer les filtres d'entrée/sortie
     if (_showOnlyIncomes && !_showOnlyExpenses) {
-      filteredList = filteredList.where((t) => t.amount > 0).toList();
+      filteredList = filteredList.where((t) => t.transactionType == 'income').toList();
     } else if (_showOnlyExpenses && !_showOnlyIncomes) {
-      filteredList = filteredList.where((t) => t.amount < 0).toList();
+      filteredList = filteredList.where((t) => t.transactionType == 'expense').toList();
     }
     
     // Appliquer le tri
@@ -287,7 +289,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     double totalIncomes = 0;
     double totalExpenses = 0;
     for (var transaction in filteredTransactions) {
-      if (transaction.amount > 0) {
+      if (transaction.transactionType == 'income') {
         totalIncomes += transaction.amount;
       } else {
         totalExpenses += transaction.amount.abs();
@@ -388,7 +390,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   }
 
   Widget _buildTransactionListItem(ProjectTransaction transaction) {
-    final bool isIncome = transaction.amount > 0;
+    final bool isIncome = transaction.transactionType == 'income';
     final Color amountColor = isIncome ? Colors.green : Colors.red;
     final IconData icon = isIncome 
         ? Icons.arrow_upward 

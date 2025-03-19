@@ -76,24 +76,14 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
       _isEditing = true;
       _descriptionController.text = widget.transaction!.description;
       _amountController.text = widget.transaction!.amount.abs().toString();
-      _isIncomeTransaction = widget.transaction!.amount > 0;
+      _isIncomeTransaction = widget.transaction!.transactionType == 'income';
       _transactionDate = widget.transaction!.transactionDate;
       _selectedProjectId = widget.transaction!.projectId;
       _selectedPhaseId = widget.transaction!.phaseId;
       _selectedTaskId = widget.transaction!.taskId;
       
-      // Convertir les catégories de la base de données en catégories d'affichage
-      if (widget.transaction!.category == 'income') {
-        _selectedCategory = 'Entrée';
-      } else if (widget.transaction!.category == 'expense') {
-        // Utiliser une catégorie de dépense par défaut si aucune sous-catégorie n'est spécifiée
-        _selectedCategory = widget.transaction!.subcategory != null 
-            ? _getCategoryForSubcategory(widget.transaction!.subcategory!) 
-            : 'Ressources';
-      } else {
-        _selectedCategory = widget.transaction!.category;
-      }
-      
+      // Définir la catégorie à partir du modèle mis à jour
+      _selectedCategory = widget.transaction!.category;
       _selectedSubcategory = widget.transaction!.subcategory;
       
       // Initialiser les sous-catégories en fonction de la catégorie sélectionnée
@@ -184,7 +174,8 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
           final updatedTransaction = widget.transaction!.copyWith(
             description: description,
             amount: amount,
-            category: _selectedCategory == 'Entrée' ? 'income' : _selectedCategory,
+            transactionType: _isIncomeTransaction ? 'income' : 'expense',
+            category: _selectedCategory,
             subcategory: _selectedSubcategory,
             projectId: _selectedProjectId,
             phaseId: _selectedPhaseId,
@@ -210,7 +201,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
             amount,
             description,
             _transactionDate,
-            _selectedCategory == 'Entrée' ? 'income' : _selectedCategory,
+            _selectedCategory,
             _selectedSubcategory,
           );
           

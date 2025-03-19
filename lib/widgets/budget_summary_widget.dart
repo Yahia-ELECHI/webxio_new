@@ -190,6 +190,7 @@ class BudgetSummaryWidget extends StatelessWidget {
                               category: 'other',
                               createdAt: DateTime.now(),
                               createdBy: '',
+                              transactionType: 'expense',
                             ),
                           );
                           if (deletedTransaction != null) {

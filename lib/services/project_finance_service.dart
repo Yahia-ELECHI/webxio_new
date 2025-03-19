@@ -342,8 +342,11 @@ class ProjectFinanceService {
         }
         
         // Ajouter la transaction actuelle
-        if (category == 'income') {
-          projectIncome += amount;
+        // Déterminer le type de transaction (income/expense) selon le montant
+        String transactionType = amount >= 0 ? 'income' : 'expense';
+        
+        if (transactionType == 'income') {
+          projectIncome += amount.abs();
         } else {
           projectExpenses += amount.abs();
         }
@@ -392,6 +395,9 @@ class ProjectFinanceService {
         }
       }
 
+      // Déterminer le type de transaction (income/expense) selon le montant
+      String transactionType = amount >= 0 ? 'income' : 'expense';
+
       final transaction = ProjectTransaction(
         id: transactionId,
         projectId: projectId,
@@ -400,11 +406,12 @@ class ProjectFinanceService {
         phaseName: phaseName,
         taskId: taskId,
         taskName: taskName,
-        amount: category == 'expense' ? -amount.abs() : amount.abs(), // Montant négatif pour les dépenses
+        amount: amount, // Le montant peut être positif ou négatif
         description: description,
         transactionDate: transactionDate,
-        category: category,
-        subcategory: subcategory,
+        transactionType: transactionType, // 'income' ou 'expense'
+        category: category, // Anciennement subcategory
+        subcategory: subcategory, // Nouvelle sous-catégorie
         createdAt: now,
         createdBy: userId,
       );
@@ -412,7 +419,7 @@ class ProjectFinanceService {
       // Convertir en format compatible avec la table existante
       final jsonData = transaction.toJson();
       
-      // Adapter les noms de champs si nécessaire
+      // Adapter les noms de champs pour la base de données
       final dbData = {
         'id': jsonData['id'],
         'project_id': jsonData['project_id'],
@@ -421,6 +428,7 @@ class ProjectFinanceService {
         'amount': jsonData['amount'],
         'description': jsonData['description'],
         'transaction_date': jsonData['transaction_date'],
+        'transaction_type': jsonData['transaction_type'], // Mise à jour
         'category': jsonData['category'],
         'subcategory': jsonData['subcategory'],
         'created_at': jsonData['created_at'],
@@ -493,6 +501,7 @@ class ProjectFinanceService {
         'amount': transaction.amount,
         'description': transaction.description,
         'transaction_date': transaction.transactionDate.toIso8601String(),
+        'transaction_type': transaction.transactionType, // Mise à jour
         'category': transaction.category,
         'subcategory': transaction.subcategory,
         'updated_at': now.toIso8601String(),
@@ -520,7 +529,7 @@ class ProjectFinanceService {
       
       final projectId = transactionResponse['project_id'] as String?;
       final amount = transactionResponse['amount'] as double;
-      final category = transactionResponse['category'] as String;
+      final category = transactionResponse['transaction_type'] as String;
       
       // Calculer l'impact sur le solde du projet
       if (projectId != null) {

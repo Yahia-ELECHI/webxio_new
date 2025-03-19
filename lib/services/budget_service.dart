@@ -313,6 +313,7 @@ class BudgetService {
       createdAt: transaction.createdAt,
       updatedAt: transaction.updatedAt,
       createdBy: transaction.createdBy,
+      transactionType: transaction.amount > 0 ? 'income' : 'expense',
     );
   }
 
