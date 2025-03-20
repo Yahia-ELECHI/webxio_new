@@ -7,6 +7,7 @@ import '../../services/auth_service.dart';
 import '../../widgets/custom_app_bar.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
+import 'widgets/modern_project_card.dart';
 
 class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({super.key});
@@ -177,107 +178,23 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         itemCount: _projects.length,
         itemBuilder: (context, index) {
           final project = _projects[index];
-          return _buildProjectCard(project);
-        },
-      ),
-    );
-  }
-
-  Widget _buildProjectCard(Project project) {
-    // Déterminer la couleur du statut
-    final ProjectStatus status = ProjectStatus.values.firstWhere(
-      (s) => s.name == project.status,
-      orElse: () => ProjectStatus.active,
-    );
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 2,
-      child: InkWell(
-        onTap: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProjectDetailScreen(projectId: project.id),
-            ),
-          );
-          if (result == true) {
-            _loadProjects();
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      project.name,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: status.color.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: status.color),
-                    ),
-                    child: Text(
-                      status.displayName,
-                      style: TextStyle(
-                        color: status.color,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                project.description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.grey[700],
+          return ModernProjectCard(
+            project: project,
+            teamCount: _projectTeamCounts[project.id],
+            onTap: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProjectDetailScreen(projectId: project.id),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Équipes: ${_projectTeamCounts[project.id] ?? "..."}',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  Text(
-                    'Créé le ${_formatDate(project.createdAt)}',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+              );
+              if (result == true) {
+                _loadProjects();
+              }
+            },
+          );
+        },
       ),
     );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
   }
 }
