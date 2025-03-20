@@ -8,6 +8,7 @@ import 'team_detail_screen.dart';
 import 'create_team_screen.dart';
 import 'invitations_screen.dart';
 import 'join_team_screen.dart';
+import 'widgets/modern_team_cards.dart';
 
 class TeamsScreen extends StatefulWidget {
   const TeamsScreen({super.key});
@@ -148,47 +149,9 @@ class _TeamsScreenState extends State<TeamsScreen> {
                     slivers: [
                       if (_invitations.isNotEmpty)
                         SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Card(
-                              elevation: 2,
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Invitations',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    const Divider(),
-                                    ..._invitations.map((invitation) => ListTile(
-                                      title: Text(invitation.teamName ?? 'Équipe inconnue'),
-                                      subtitle: Text('Invitation de: ${invitation.email}'),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.check, color: Colors.green),
-                                            onPressed: () => _handleInvitation(invitation, true),
-                                            tooltip: 'Accepter',
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(Icons.close, color: Colors.red),
-                                            onPressed: () => _handleInvitation(invitation, false),
-                                            tooltip: 'Rejeter',
-                                          ),
-                                        ],
-                                      ),
-                                    )),
-                                  ],
-                                ),
-                              ),
-                            ),
+                          child: ModernInvitationCard(
+                            invitations: _invitations,
+                            onInvitationAction: _handleInvitation,
                           ),
                         ),
                       SliverPadding(
@@ -238,57 +201,21 @@ class _TeamsScreenState extends State<TeamsScreen> {
                                   crossAxisCount: 2,
                                   crossAxisSpacing: 16,
                                   mainAxisSpacing: 16,
-                                  childAspectRatio: 1.2,
+                                  childAspectRatio: 1.0,
                                 ),
                                 delegate: SliverChildBuilderDelegate(
                                   (context, index) {
                                     final team = _teams[index];
-                                    return Card(
-                                      elevation: 2,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: InkWell(
-                                        onTap: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (context) => TeamDetailScreen(team: team),
-                                            ),
-                                          ).then((_) => _loadData());
-                                        },
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(16),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                team.name,
-                                                style: const TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              const SizedBox(height: 8),
-                                              if (team.description != null)
-                                                Expanded(
-                                                  child: Text(
-                                                    team.description!,
-                                                    style: const TextStyle(
-                                                      fontSize: 14,
-                                                      color: Colors.grey,
-                                                    ),
-                                                    maxLines: 3,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                            ],
+                                    return ModernTeamCard(
+                                      team: team,
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => TeamDetailScreen(team: team),
                                           ),
-                                        ),
-                                      ),
+                                        ).then((_) => _loadData());
+                                      },
                                     );
                                   },
                                   childCount: _teams.length,
