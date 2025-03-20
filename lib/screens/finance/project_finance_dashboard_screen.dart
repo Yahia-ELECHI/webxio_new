@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../dashboard/widgets/modern_project_selector.dart';
 import '../../models/project_transaction_model.dart';
 import '../../models/project_model.dart';
 import '../../models/phase_model.dart';
@@ -215,42 +216,9 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
       appBar: AppBar(
         title: const Text('Tableau de bord financier'),
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(_isAdmin && _selectedProjectId != null ? 85 : 48),
+          preferredSize: Size.fromHeight(_isAdmin && _selectedProjectId != null ? 48 : 48),
           child: Column(
             children: [
-              // Afficher le badge de projet si nécessaire
-              if (_isAdmin && _selectedProjectId != null)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  color: Theme.of(context).primaryColor,
-                  child: Wrap(
-                    alignment: WrapAlignment.start,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      const Text(
-                        'Projet : ',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Chip(
-                        label: Text(
-                          _selectedProjectName,
-                          style: const TextStyle(
-                            fontSize: 12, 
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        backgroundColor: Colors.blue.shade700,
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ],
-                  ),
-                ),
               // TabBar pour la navigation
               TabBar(
                 controller: _tabController,
@@ -279,10 +247,10 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
         actions: [
           // Affichage du sélecteur de projet uniquement pour les administrateurs
           if (_isAdmin) 
-            IconButton(
-              icon: Icon(_showAllProjects ? Icons.people_alt : Icons.people_outline),
+            ProjectSelectorButton(
               onPressed: _showProjectSelector,
-              tooltip: 'Gérer les finances de projet',
+              showAllProjects: _showAllProjects,
+              projectName: _selectedProjectName,
             ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -325,72 +293,30 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   void _showProjectSelector() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  const Icon(Icons.account_balance_wallet, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Choix des données financières',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
             ),
-            const Divider(height: 1),
-            ListTile(
-              title: const Text('Voir tous les projets'),
-              leading: const Icon(Icons.people),
-              onTap: () {
+            child: ModernProjectSelector(
+              projects: _projects,
+              selectedProjectId: _selectedProjectId,
+              showAllProjects: _showAllProjects,
+              onProjectSelected: (projectId, showAll) {
                 setState(() {
-                  _showAllProjects = true;
-                  _selectedProjectId = null;
+                  _showAllProjects = showAll;
+                  _selectedProjectId = projectId;
                 });
-                Navigator.pop(context);
                 _loadData();
               },
             ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.people, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Mes projets',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Liste des projets
-            ..._projects.map((project) => ListTile(
-              title: Text(project.name),
-              leading: const Icon(Icons.group_work),
-              trailing: _selectedProjectId == project.id && !_showAllProjects
-                  ? const Icon(Icons.check_circle, color: Colors.green)
-                  : null,
-              onTap: () {
-                setState(() {
-                  _showAllProjects = false;
-                  _selectedProjectId = project.id;
-                });
-                Navigator.pop(context);
-                _loadData();
-              },
-            )).toList(),
-          ],
+          ),
         );
       },
     );

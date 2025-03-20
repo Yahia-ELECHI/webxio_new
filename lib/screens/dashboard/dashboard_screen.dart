@@ -4,15 +4,21 @@ import '../../models/project_model.dart';
 import '../../models/phase_model.dart';
 import '../../models/budget_model.dart';
 import '../../models/budget_transaction_model.dart';
+import '../../models/project_transaction_model.dart';
+import '../../models/task_history_model.dart';
 import '../../services/task_service.dart';
-import '../../services/project_service.dart';
+import '../../services/project_service/project_service.dart';
 import '../../services/phase_service.dart';
 import '../../services/budget_service.dart';
+import '../../services/user_service.dart';
 import '../../main.dart'; // Import pour utiliser MainAppScreen
 import 'models/dashboard_chart_models.dart';
 import 'sections/tasks_projects_section.dart';
-import 'sections/budget_finance_section.dart';
 import 'sections/phases_section.dart';
+import 'sections/task_history_section.dart';
+import 'widgets/cagnotte_webview.dart';
+import 'widgets/modern_project_selector.dart';
+import '../tasks/task_detail_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -26,15 +32,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final ProjectService _projectService = ProjectService();
   final PhaseService _phaseService = PhaseService();
   final BudgetService _budgetService = BudgetService();
+  final UserService _userService = UserService();
   
   bool _isLoading = true;
+  
+  // Sélection par projet
+  String? _selectedProjectId;
+  bool _showAllProjects = true; // Afficher tous les projets par défaut
+  
+  // Obtenir le nom du projet sélectionné
+  String get _selectedProjectName {
+    if (_selectedProjectId == null || _projectsList.isEmpty) {
+      return "";
+    }
+    
+    final project = _projectsList.firstWhere(
+      (p) => p.id == _selectedProjectId,
+      orElse: () => Project(
+        id: "",
+        name: "Projet inconnu",
+        description: "",
+        status: "active",
+        createdBy: "",
+        createdAt: DateTime.now(),
+      ),
+    );
+    
+    return project.name;
+  }
   
   // Données brutes
   List<Task> _tasksList = [];
   List<Project> _projectsList = [];
   List<Phase> _phasesList = [];
   List<Budget> _budgetsList = [];
-  List<BudgetTransaction> _transactionsList = [];
+  List<BudgetTransaction> _budgetTransactionsList = [];
+  List<ProjectTransaction> _projectTransactionsList = [];
+  List<TaskHistory> _taskHistoryList = [];
+  Map<String, String> _userDisplayNames = {};
+  Map<String, Task> _tasksMap = {};
 
   // Données pour les graphiques
   List<TaskDistributionData> _tasksByStatusData = [];
@@ -57,47 +93,87 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
     
     try {
-      // Chargement des projets, tâches et phases
-      _projectsList = await _projectService.getProjects();
-      _tasksList = await _taskService.getAllTasks();
-      _phasesList = await _phaseService.getAllPhases();
-      _budgetsList = await _budgetService.getBudgets();
-      _transactionsList = await _budgetService.getRecentTransactions(10);
+      // Chargement des projets
+      _projectsList = await _projectService.getAllProjects();
       
-      // Charger les données budgétaires pour chaque projet
-      for (var i = 0; i < _projectsList.length; i++) {
-        final projectTransactions = await _budgetService.getTransactionsByProject(_projectsList[i].id);
+      // Chargement des données selon le projet sélectionné ou tous les projets
+      if (!_showAllProjects && _selectedProjectId != null) {
+        // Charger les tâches du projet sélectionné
+        _tasksList = await _taskService.getTasksByProject(_selectedProjectId!);
         
-        double allocated = 0;
-        double consumed = 0;
+        // Charger les phases du projet sélectionné
+        _phasesList = await _phaseService.getPhasesByProject(_selectedProjectId!);
         
-        // Calculer l'allocation à partir des transactions positives
-        final allocations = projectTransactions.where((t) => t.amount > 0);
-        if (allocations.isNotEmpty) {
-          allocated = allocations.fold(0, (sum, t) => sum + t.amount);
+        // Charger les données budgétaires du projet sélectionné
+        _budgetsList = await _budgetService.getProjectBudgets(_selectedProjectId!);
+        _budgetTransactionsList = await _budgetService.getRecentTransactions(10);
+        _projectTransactionsList = await _budgetService.getTransactionsByProject(_selectedProjectId!);
+        
+        // Charger l'historique des tâches pour le projet sélectionné
+        final allTasksInProject = await _taskService.getTasksByProject(_selectedProjectId!);
+        _tasksMap = {for (var task in allTasksInProject) task.id: task};
+        
+        // On récupère l'historique pour chaque tâche du projet
+        _taskHistoryList = [];
+        for (var task in allTasksInProject) {
+          final history = await _projectService.getTaskHistory(task.id);
+          _taskHistoryList.addAll(history);
         }
         
-        // Calculer la consommation à partir des transactions négatives
-        final expenses = projectTransactions.where((t) => t.amount < 0);
-        if (expenses.isNotEmpty) {
-          consumed = expenses.fold(0, (sum, t) => sum + t.amount.abs());
+        // Limiter à 50 entrées d'historique les plus récentes
+        _taskHistoryList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        if (_taskHistoryList.length > 50) {
+          _taskHistoryList = _taskHistoryList.sublist(0, 50);
+        }
+      } else {
+        // Charger toutes les données
+        _tasksList = await _taskService.getAllTasks();
+        _phasesList = await _phaseService.getAllPhases();
+        _budgetsList = await _budgetService.getBudgets();
+        _budgetTransactionsList = await _budgetService.getRecentTransactions(10);
+        _projectTransactionsList = [];
+        
+        // Créer un mapping des tâches
+        _tasksMap = {for (var task in _tasksList) task.id: task};
+        
+        // Charger l'historique des tâches récentes (limité à 50)
+        _taskHistoryList = [];
+        // On récupère les 10 tâches les plus récentes pour limiter le volume de données
+        final recentTasks = List<Task>.from(_tasksList)
+          ..sort((a, b) => b.updatedAt?.compareTo(a.updatedAt ?? a.createdAt) ?? 
+                            b.createdAt.compareTo(a.createdAt));
+        final tasksToFetch = recentTasks.take(20).toList();
+        
+        for (var task in tasksToFetch) {
+          final history = await _projectService.getTaskHistory(task.id);
+          _taskHistoryList.addAll(history);
         }
         
-        // Mettre à jour le projet avec les valeurs calculées
-        _projectsList[i] = _projectsList[i].copyWith(
-          budgetAllocated: allocated > 0 ? allocated : _projectsList[i].budgetAllocated,
-          budgetConsumed: consumed > 0 ? consumed : _projectsList[i].budgetConsumed,
-        );
+        // Limiter à 50 entrées d'historique les plus récentes
+        _taskHistoryList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        if (_taskHistoryList.length > 50) {
+          _taskHistoryList = _taskHistoryList.sublist(0, 50);
+        }
       }
       
-      // Transformation des données pour les graphiques
+      // Préparation des données pour les charts et widgets
       _prepareTasksByStatusData(_tasksList);
       _prepareTasksByPriorityData(_tasksList);
       _prepareProjectProgressData(_projectsList, _phasesList, _tasksList);
       _prepareUpcomingTasksData(_tasksList);
-      _prepareBudgetOverviewData(_projectsList);
-      _prepareRecentTransactionsData(_transactionsList);
       _preparePhaseProgressData(_phasesList, _tasksList);
+      _prepareBudgetOverviewData(_projectsList);
+      _prepareRecentTransactionsData(_projectTransactionsList);
+      
+      // Chargement des noms d'utilisateurs
+      final userIds = <String>{};
+      for (var history in _taskHistoryList) {
+        userIds.add(history.userId);
+      }
+      
+      if (userIds.isNotEmpty) {
+        _userDisplayNames = await _userService.getUsersDisplayNames(userIds.toList());
+      }
       
     } catch (e) {
       print('Erreur lors du chargement des données: $e');
@@ -245,14 +321,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }).toList();
   }
   
-  void _prepareRecentTransactionsData(List<BudgetTransaction> transactions) {
+  void _prepareRecentTransactionsData(List<ProjectTransaction> transactions) {
     _recentTransactionsData = transactions.map((transaction) {
       return RecentTransactionData(
         id: transaction.id,
         description: transaction.description,
         amount: transaction.amount,
         date: transaction.transactionDate,
-        category: transaction.category,
+        category: transaction.category ?? (transaction.amount > 0 ? 'income' : 'expense'),
         isIncome: transaction.amount > 0,
       );
     }).toList();
@@ -272,7 +348,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'terminée':
       case 'completed':
         return Colors.green;
-      case 'en attente':
+      case 'en revision':
       case 'review':
         return Colors.orange;
       case 'annulée':
@@ -389,11 +465,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _navigateToTaskDetails(String taskId) {
-    Navigator.pushNamed(
-      context,
-      '/task-details',
-      arguments: taskId,
-    ).then((_) => _loadDashboardData());
+    final task = _tasksMap[taskId];
+    if (task != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => TaskDetailScreen(
+            task: task,
+            onTaskUpdated: (updatedTask) {
+              // Mettre à jour la tâche dans la liste
+              setState(() {
+                final index = _tasksList.indexWhere((t) => t.id == updatedTask.id);
+                if (index >= 0) {
+                  _tasksList[index] = updatedTask;
+                  _tasksMap[updatedTask.id] = updatedTask;
+                }
+                // Recharger les données du dashboard
+                _loadDashboardData();
+              });
+            },
+          ),
+        ),
+      );
+    }
   }
 
   void _navigateToPhaseDetails(String phaseId) {
@@ -460,6 +554,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  void _showProjectSelector() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: ModernProjectSelector(
+              projects: _projectsList,
+              selectedProjectId: _selectedProjectId,
+              showAllProjects: _showAllProjects,
+              onProjectSelected: (projectId, showAll) {
+                setState(() {
+                  _showAllProjects = showAll;
+                  _selectedProjectId = projectId;
+                });
+                _loadDashboardData();
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -508,12 +634,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // Section budget et finances
                     SizedBox(
-                      height: 1200, // Hauteur augmentée pour la section budget
-                      child: BudgetFinanceSection(
-                        recentTransactionsData: _recentTransactionsData,
-                        onSeeAllBudget: _navigateToBudgetScreen,
-                        onSeeAllTransactions: _navigateToTransactions,
-                        onProjectTap: _navigateToProjectDetails,
+                      height: 600, 
+                      child: CagnotteWebView(
+                        title: 'Cagnotte en ligne',
+                        onSeeAllPressed: _navigateToBudgetScreen,
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 24),
+                    
+                    // Section historique des tâches
+                    SizedBox(
+                      height: 400,
+                      child: TaskHistorySection(
+                        taskHistoryData: _taskHistoryList,
+                        userDisplayNames: _userDisplayNames,
+                        tasksMap: _tasksMap,
+                        onSeeAllHistory: null, // Ajoutez une fonction si besoin d'avoir un écran dédié
+                        onTaskTap: _navigateToTaskDetails,
                       ),
                     ),
                     
@@ -540,20 +678,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '$greeting !',
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '$greeting !',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            // Bouton de sélection de projet
+            if (_projectsList.isNotEmpty)
+              ProjectSelectorButton(
+                onPressed: _showProjectSelector,
+                showAllProjects: _showAllProjects,
+                projectName: _selectedProjectName,
+              ),
+          ],
         ),
         const SizedBox(height: 8),
-        Text(
-          'Bienvenue sur votre tableau de bord',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.grey[600],
-          ),
+        Row(
+          children: [
+            Text(
+              'Bienvenue sur votre tableau de bord',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+            if (!_showAllProjects && _selectedProjectId != null)
+              Expanded(
+                child: Text(
+                  ' - ${_selectedProjectName}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue[700],
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
         ),
       ],
     );

@@ -341,7 +341,7 @@ class _MainAppScreenState extends State<MainAppScreen> {
     const TeamsScreen(),
     const CalendarScreen(),
     const StatisticsScreen(),
-    const FinanceDashboardScreen(), // Tableau de bord financier basé sur les projets
+    const ProjectFinanceDashboardScreen(), // Nouveau tableau de bord financier avec sélecteur moderne
     const ProfileScreen(),
   ];
   
