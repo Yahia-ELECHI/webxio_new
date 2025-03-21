@@ -12,7 +12,7 @@ import '../../services/attachment_service.dart';
 import '../../services/budget_service.dart';
 import '../../widgets/budget_summary_widget.dart';
 import '../../widgets/custom_app_bar.dart';
-import '../finance/project_transaction_screen.dart';
+import '../budget/transaction_form_screen.dart';
 import 'task_form_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -436,7 +436,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           final result = await Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ProjectTransactionScreen(
+                              builder: (context) => TransactionFormScreen(
                                 taskId: _task.id,
                                 projectId: _task.projectId,
                                 phaseId: _task.phaseId,

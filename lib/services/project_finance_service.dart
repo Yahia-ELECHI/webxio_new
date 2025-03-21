@@ -272,9 +272,69 @@ class ProjectFinanceService {
     try {
       final userId = _supabase.auth.currentUser!.id;
       
+      // Vérifier si l'utilisateur est un administrateur
+      final isAdmin = await isUserAdmin();
+      
+      List<String> projectIds = [];
+      
+      // 1. Récupérer les projets créés par l'utilisateur
+      final createdProjectsResponse = await _supabase
+          .from('projects')
+          .select('id')
+          .eq('created_by', userId);
+      
+      for (var project in createdProjectsResponse) {
+        projectIds.add(project['id'] as String);
+      }
+      
+      // 2. Récupérer les équipes dont l'utilisateur est membre
+      final teamsResponse = await _supabase
+          .from('team_members')
+          .select('team_id')
+          .eq('user_id', userId)
+          .eq('status', 'active');
+      
+      if (teamsResponse.isNotEmpty) {
+        final teamIds = teamsResponse.map<String>((t) => t['team_id'] as String).toList();
+        
+        // 3. Récupérer les projets associés à ces équipes via la table team_projects
+        final teamProjectsResponse = await _supabase
+            .from('team_projects')
+            .select('project_id')
+            .inFilter('team_id', teamIds);
+        
+        for (var project in teamProjectsResponse) {
+          if (!projectIds.contains(project['project_id'])) {
+            projectIds.add(project['project_id'] as String);
+          }
+        }
+      }
+      
+      // Si l'utilisateur est un administrateur global, il peut voir tous les projets
+      if (isAdmin) {
+        final allProjectsResponse = await _supabase
+            .from('projects')
+            .select('id');
+            
+        for (var project in allProjectsResponse) {
+          if (!projectIds.contains(project['id'])) {
+            projectIds.add(project['id'] as String);
+          }
+        }
+      }
+      
+      // Si aucun projet n'est accessible, retourner une liste vide
+      if (projectIds.isEmpty) {
+        return [];
+      }
+      
+      print('DEBUG ProjectFinanceService: Projets accessibles pour l\'utilisateur ${userId}: ${projectIds.join(', ')}');
+      
+      // Récupérer les transactions liées à ces projets
       final response = await _supabase
-          .from('budget_transactions') // Utilisation de la table existante
+          .from('budget_transactions')
           .select()
+          .inFilter('project_id', projectIds)
           .order('transaction_date', ascending: false);
 
       final List<ProjectTransaction> transactions = [];

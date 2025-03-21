@@ -15,6 +15,7 @@ class TransactionFormScreen extends StatefulWidget {
   final String? projectId; // ID du projet pour une nouvelle transaction
   final String? phaseId; // ID de la phase pour une nouvelle transaction
   final String? taskId; // ID de la tâche pour une nouvelle transaction
+  final String? initialProjectId; // ID du projet initialement sélectionné
 
   const TransactionFormScreen({
     Key? key, 
@@ -22,6 +23,7 @@ class TransactionFormScreen extends StatefulWidget {
     this.projectId,
     this.phaseId,
     this.taskId,
+    this.initialProjectId,
   }) : super(key: key);
 
   @override
@@ -50,7 +52,19 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   List<Phase> _phases = [];
   List<Task> _tasks = [];
   final Map<String, List<String>> _categories = {
-    'Entrée': ['Don', 'Virement','Vente de livres','Cours en ligne', 'Cagnotte en ligne', 'Waqf','Remboursement', 'Dotation', 'Subvention', 'Autre'],
+    'Don Joumoua': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Événement caritatif', 'Autre'],
+    'Don': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Événement caritatif', 'Autre'],
+    'Don Tarawih': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Collecte spéciale', 'Autre'],
+    'Don Ramadan': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Zakat Al-Fitr', 'Autre'],
+    'Don Aïd': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Qurbani', 'Autre'],
+    'Virement': ['Mensuel', 'Ponctuel', 'International', 'Interne', 'Autre'],
+    'Vente de livres': ['Religieux', 'Éducatifs', 'Culturels', 'Numériques', 'Autre'],
+    'Cours en ligne': ['Formation Tajwid', 'Formation Fikh', 'Webinaire', 'Atelier virtuel', 'Autre'],
+    'Cagnotte en ligne': ['Projet spécifique', 'Urgence', 'Événement', 'Campagne annuelle', 'Autre'],
+    'Waqf': ['Immobilier', 'Mobilier', 'Financier', 'Autre'],
+    'Remboursement': ['Avance', 'Trop-perçu', 'Assurance', 'Fournisseur', 'Autre'],
+    'Dotation': ['Fondation', 'Institution', 'Gouvernementale', 'Autre'],
+    'Subvention': ['Publique', 'Privée', 'Européenne', 'Locale', 'Nationale', 'Autre'],
     'Construction': ['Terrassement', 'Fondations', 'Gros œuvre', 'Second œuvre', 'Toiture', 'Façades', 'Aménagements extérieurs', 'Équipements techniques', 'Finitions', 'Mobilier', 'Honoraires architecte', 'Études techniques', 'Permis et autorisations', 'Autre'],
     'Éducatif': ['Matériel pédagogique', 'Bibliothèque', 'Équipement multimédia', 'Fournitures scolaires', 'Livres religieux', 'Formation enseignants', 'Activités parascolaires', 'Autre'],
     'Ressources': ['Matériel', 'Licences logicielles', 'Formation', 'Services externes', 'Équipements spécialisés', 'Autre'],
@@ -61,19 +75,16 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     'Autre': ['Divers'],
   };
   List<String> _subcategories = [];
-  List<String> _entriesCategories = ['Entrée'];
+  List<String> _entriesCategories = ['Don', 'Don Joumoua', 'Don Tarawih', 'Don Ramadan', 'Don Aïd', 'Virement', 'Vente de livres', 'Cours en ligne', 'Cagnotte en ligne', 'Waqf', 'Remboursement', 'Dotation', 'Subvention'];
   List<String> _expensesCategories = ['Construction', 'Éducatif', 'Ressources', 'Personnel', 'Marketing', 'Opérations', 'Finance', 'Autre'];
 
   @override
   void initState() {
     super.initState();
-    _initFormData();
-    _loadProjects();
-  }
 
-  Future<void> _initFormData() async {
-    if (widget.transaction != null) {
-      _isEditing = true;
+    _isEditing = widget.transaction != null;
+    
+    if (_isEditing) {
       _descriptionController.text = widget.transaction!.description;
       _amountController.text = widget.transaction!.amount.abs().toString();
       _isIncomeTransaction = widget.transaction!.transactionType == 'income';
@@ -89,11 +100,12 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
       // Initialiser les sous-catégories en fonction de la catégorie sélectionnée
       _updateSubcategories(_selectedCategory);
     } else {
-      _selectedProjectId = widget.projectId;
+      _selectedProjectId = widget.initialProjectId ?? widget.projectId;
       _selectedPhaseId = widget.phaseId;
       _selectedTaskId = widget.taskId;
-      _updateSubcategories(_isIncomeTransaction ? 'Entrée' : 'Ressources');
+      _updateSubcategories(_isIncomeTransaction ? 'Don' : 'Ressources');
     }
+    _loadProjects();
   }
 
   // Méthode pour trouver la catégorie principale correspondant à une sous-catégorie
@@ -266,7 +278,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Type de transaction (entrée/sortie)
+                    // Type de transaction (Entrée/sortie)
                     Row(
                       children: [
                         Expanded(
@@ -278,7 +290,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               setState(() {
                                 _isIncomeTransaction = value!;
                                 // Mettre à jour les catégories disponibles
-                                _updateSubcategories(_isIncomeTransaction ? 'Entrée' : 'Ressources');
+                                _updateSubcategories(_isIncomeTransaction ? 'Don' : 'Ressources');
                               });
                             },
                             activeColor: Colors.green,
@@ -293,7 +305,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               setState(() {
                                 _isIncomeTransaction = value!;
                                 // Mettre à jour les catégories disponibles
-                                _updateSubcategories(_isIncomeTransaction ? 'Entrée' : 'Ressources');
+                                _updateSubcategories(_isIncomeTransaction ? 'Don' : 'Ressources');
                               });
                             },
                             activeColor: Colors.red,

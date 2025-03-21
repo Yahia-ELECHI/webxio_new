@@ -10,7 +10,7 @@ import '../../../widgets/islamic_patterns.dart';
 import '../../../widgets/budget_summary_widget.dart';
 import '../../tasks/task_form.dart';
 import '../../tasks/task_detail_screen.dart';
-import '../../finance/project_transaction_screen.dart';
+import '../../budget/transaction_form_screen.dart';
 import 'phase_form.dart';
 
 class PhaseDetailScreen extends StatefulWidget {
@@ -314,7 +314,7 @@ class _PhaseDetailScreenState extends State<PhaseDetailScreen> {
                             final result = await Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => ProjectTransactionScreen(
+                                builder: (context) => TransactionFormScreen(
                                   phaseId: _phase.id,
                                   projectId: widget.project.id,
                                 ),

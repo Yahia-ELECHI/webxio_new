@@ -11,6 +11,7 @@ import '../../services/project_service/project_service.dart';
 import '../../services/phase_service.dart';
 import '../../services/budget_service.dart';
 import '../../services/user_service.dart';
+import '../../services/project_finance_service.dart';
 import '../../main.dart'; // Import pour utiliser MainAppScreen
 import 'models/dashboard_chart_models.dart';
 import 'sections/tasks_projects_section.dart';
@@ -33,6 +34,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final PhaseService _phaseService = PhaseService();
   final BudgetService _budgetService = BudgetService();
   final UserService _userService = UserService();
+  final ProjectFinanceService _projectFinanceService = ProjectFinanceService();
   
   bool _isLoading = true;
   
@@ -95,9 +97,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       // Chargement des projets
       _projectsList = await _projectService.getAllProjects();
+      print('DEBUG: Nombre de projets chargés: ${_projectsList.length}');
       
       // Chargement des données selon le projet sélectionné ou tous les projets
       if (!_showAllProjects && _selectedProjectId != null) {
+        print('DEBUG: Mode projet spécifique, ID: $_selectedProjectId');
+        
         // Charger les tâches du projet sélectionné
         _tasksList = await _taskService.getTasksByProject(_selectedProjectId!);
         
@@ -107,7 +112,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Charger les données budgétaires du projet sélectionné
         _budgetsList = await _budgetService.getProjectBudgets(_selectedProjectId!);
         _budgetTransactionsList = await _budgetService.getRecentTransactions(10);
-        _projectTransactionsList = await _budgetService.getTransactionsByProject(_selectedProjectId!);
+        
+        // En mode projet spécifique, récupérer uniquement les transactions du projet
+        _projectTransactionsList = await _projectFinanceService.getProjectTransactions(_selectedProjectId!);
+        print('DEBUG: Transactions chargées pour le projet spécifique: ${_projectTransactionsList.length}');
+        
+        // Pour debug: afficher les IDs des transactions
+        for (var tx in _projectTransactionsList) {
+          print('DEBUG: Transaction ID: ${tx.id}, Projet: ${tx.projectId}, Montant: ${tx.amount}');
+        }
         
         // Charger l'historique des tâches pour le projet sélectionné
         final allTasksInProject = await _taskService.getTasksByProject(_selectedProjectId!);
@@ -131,7 +144,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _phasesList = await _phaseService.getAllPhases();
         _budgetsList = await _budgetService.getBudgets();
         _budgetTransactionsList = await _budgetService.getRecentTransactions(10);
-        _projectTransactionsList = [];
+        
+        // Charger toutes les transactions accessibles par l'utilisateur
+        _projectTransactionsList = await _projectFinanceService.getAllProjectTransactions();
+        print('DEBUG: Nombre total de transactions chargées: ${_projectTransactionsList.length}');
+        
+        // Pour debug: afficher les IDs des transactions
+        for (var tx in _projectTransactionsList) {
+          print('DEBUG: Transaction ID: ${tx.id}, Projet: ${tx.projectId}, Montant: ${tx.amount}');
+        }
         
         // Créer un mapping des tâches
         _tasksMap = {for (var task in _tasksList) task.id: task};
@@ -230,7 +251,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
   
   void _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks) {
+    print('DEBUG: Préparation des données de progression pour ${projects.length} projets');
+    print('DEBUG: Nombre total de transactions disponibles: ${_projectTransactionsList.length}');
+    
     _projectProgressData = projects.map((project) {
+      print('DEBUG: Traitement du projet ${project.name} (ID: ${project.id})');
+      
       // Calcul du pourcentage de progression
       final projectPhases = phases.where((phase) => phase.projectId == project.id).toList();
       final projectTasks = tasks.where((task) => task.projectId == project.id).toList();
@@ -242,13 +268,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
           task.status.toLowerCase() == 'completed'
         ).length;
         progressPercentage = (completedTasks / projectTasks.length) * 100;
+        print('DEBUG: Tâches complétées: $completedTasks/${projectTasks.length}, Progression: $progressPercentage%');
+      }
+      
+      // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
+      double budgetUsagePercentage = 0;
+      print('DEBUG: Budget alloué: ${project.budgetAllocated}, Budget consommé (valeur statique): ${project.budgetConsumed}');
+      print('DEBUG: Pourcentage d\'utilisation par défaut: ${project.budgetUsagePercentage}%');
+      
+      if (_projectTransactionsList.isNotEmpty) {
+        final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
+        print('DEBUG: Nombre de transactions trouvées pour ce projet: ${projectTransactions.length}');
+        
+        // Si on a trouvé des transactions pour ce projet, calculer le pourcentage d'utilisation
+        if (projectTransactions.isNotEmpty) {
+          // Calculer les dépenses (expenses)
+          double usedBudget = projectTransactions
+              .where((tx) => !tx.isIncome)
+              .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+          
+          // Calculer les revenus (income)
+          double totalRevenues = projectTransactions
+              .where((tx) => tx.isIncome)
+              .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+          
+          print('DEBUG: Montant utilisé calculé à partir des transactions: $usedBudget');
+          print('DEBUG: Revenus calculés à partir des transactions: $totalRevenues');
+          
+          // Si nous avons des revenus, calculer le pourcentage par rapport aux revenus
+          if (totalRevenues > 0) {
+            budgetUsagePercentage = (usedBudget / totalRevenues) * 100;
+            print('DEBUG: Pourcentage d\'utilisation calculé par rapport aux revenus: $budgetUsagePercentage%');
+          } else if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
+            // Sinon, utiliser le budget alloué comme référence si disponible
+            budgetUsagePercentage = (usedBudget / project.budgetAllocated!) * 100;
+            print('DEBUG: Pourcentage d\'utilisation calculé par rapport au budget alloué: $budgetUsagePercentage%');
+          } else {
+            // Si pas de revenus et pas de budget alloué, montrer le pourcentage en fonction des dépenses
+            budgetUsagePercentage = usedBudget > 0 ? 100 : 0; // Si des dépenses existent sans revenus ni budget, 100%
+            print('DEBUG: Pourcentage d\'utilisation par défaut (sans revenus ni budget): $budgetUsagePercentage%');
+          }
+          budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
+          print('DEBUG: Pourcentage d\'utilisation final: $budgetUsagePercentage%');
+        } else {
+          // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
+          budgetUsagePercentage = project.budgetUsagePercentage;
+          print('DEBUG: Aucune transaction disponible, utilisation de la valeur par défaut: $budgetUsagePercentage%');
+        }
+      } else {
+        // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
+        budgetUsagePercentage = project.budgetUsagePercentage;
+        print('DEBUG: Aucune transaction disponible, utilisation de la valeur par défaut: $budgetUsagePercentage%');
+      }
+      
+      // Déterminer la couleur en fonction du pourcentage d'utilisation
+      Color budgetStatusColor;
+      if (budgetUsagePercentage < 50) {
+        budgetStatusColor = Colors.green; // Moins de 50% du budget utilisé : vert
+      } else if (budgetUsagePercentage < 75) {
+        budgetStatusColor = Colors.orange; // Entre 50% et 75% : orange
+      } else {
+        budgetStatusColor = Colors.red; // Plus de 75% : rouge
       }
       
       return ProjectProgressData(
         projectName: project.name,
         projectId: project.id,
         progressPercentage: progressPercentage,
-        budgetUsagePercentage: project.budgetUsagePercentage,
+        budgetUsagePercentage: budgetUsagePercentage,
         progressColor: _getProgressColor(progressPercentage),
       );
     }).toList();
@@ -293,6 +380,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
         progressPercentage = (completedTasks / phaseTasks.length) * 100;
       }
       
+      // Calcul des informations budgétaires
+      double? budgetAllocated = phase.budgetAllocated;
+      double? budgetConsumed = phase.budgetConsumed;
+      double? budgetUsagePercentage;
+      Color? budgetStatusColor;
+      
+      // Si des infos budgétaires sont disponibles, calculer le pourcentage d'utilisation
+      if (budgetAllocated != null && budgetAllocated > 0) {
+        if (budgetConsumed != null) {
+          budgetUsagePercentage = (budgetConsumed / budgetAllocated) * 100;
+          
+          // Déterminer la couleur en fonction du pourcentage d'utilisation
+          if (budgetUsagePercentage < 50) {
+            budgetStatusColor = Colors.green; // Moins de 50% du budget utilisé : vert
+          } else if (budgetUsagePercentage < 75) {
+            budgetStatusColor = Colors.orange; // Entre 50% et 75% : orange
+          } else {
+            budgetStatusColor = Colors.red; // Plus de 75% : rouge
+          }
+        }
+      } else {
+        // Essayer de calculer à partir des transactions si disponibles
+        final phaseTransactions = _projectTransactionsList.where((tx) => tx.phaseId == phase.id).toList();
+        
+        if (phaseTransactions.isNotEmpty) {
+          // Calculer le budget alloué à partir des transactions de revenu (income)
+          double allocatedFromTransactions = phaseTransactions
+              .where((tx) => tx.isIncome)
+              .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+          
+          // Calculer le budget consommé à partir des transactions de dépense (expense)
+          double consumedFromTransactions = phaseTransactions
+              .where((tx) => !tx.isIncome)
+              .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+          
+          if (allocatedFromTransactions > 0) {
+            budgetAllocated = allocatedFromTransactions;
+            budgetConsumed = consumedFromTransactions;
+            budgetUsagePercentage = (consumedFromTransactions / allocatedFromTransactions) * 100;
+            
+            // Déterminer la couleur en fonction du pourcentage d'utilisation
+            if (budgetUsagePercentage < 50) {
+              budgetStatusColor = Colors.green; // Moins de 50% du budget utilisé : vert
+            } else if (budgetUsagePercentage < 75) {
+              budgetStatusColor = Colors.orange; // Entre 50% et 75% : orange
+            } else {
+              budgetStatusColor = Colors.red; // Plus de 75% : rouge
+            }
+          }
+        }
+      }
+      
       return PhaseProgressData(
         phaseId: phase.id,
         phaseName: phase.name,
@@ -301,22 +440,106 @@ class _DashboardScreenState extends State<DashboardScreen> {
         progressPercentage: progressPercentage,
         status: phase.status,
         statusColor: _getPhaseStatusColor(phase.status),
+        budgetAllocated: budgetAllocated,
+        budgetConsumed: budgetConsumed,
+        budgetUsagePercentage: budgetUsagePercentage,
+        budgetStatusColor: budgetStatusColor,
       );
     }).toList();
   }
   
   void _prepareBudgetOverviewData(List<Project> projects) {
-    _budgetOverviewData = projects
-      .where((project) => project.budgetAllocated != null && project.budgetAllocated! > 0)
+    print('DEBUG: Préparation des données budgétaires pour ${projects.length} projets');
+    print('DEBUG: Nombre total de transactions disponibles: ${_projectTransactionsList.length}');
+    
+    // Filtrer les projets avec un budget alloué ou des transactions
+    List<Project> relevantProjects = projects.where((project) {
+      // Vérifier si le projet a un budget alloué
+      bool hasBudget = project.budgetAllocated != null && project.budgetAllocated! > 0;
+      
+      // Vérifier si le projet a des transactions
+      bool hasTransactions = _projectTransactionsList.any((tx) => tx.projectId == project.id);
+      
+      // Inclure le projet s'il a un budget ou des transactions
+      return hasBudget || hasTransactions;
+    }).toList();
+    
+    print('DEBUG: Nombre de projets pertinents pour les données budgétaires: ${relevantProjects.length}');
+    
+    _budgetOverviewData = relevantProjects
       .map((project) {
-        final budgetUsagePercentage = project.budgetUsagePercentage;
+        print('DEBUG: Traitement du projet ${project.name} (ID: ${project.id})');
+        print('DEBUG: Budget alloué: ${project.budgetAllocated}, Budget consommé (valeur statique): ${project.budgetConsumed}');
+        
+        // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
+        double usedBudget = 0;
+        double budgetUsagePercentage = 0;
+        
+        if (_projectTransactionsList.isNotEmpty) {
+          final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
+          print('DEBUG: Nombre de transactions trouvées pour ce projet: ${projectTransactions.length}');
+          
+          // Si on a trouvé des transactions pour ce projet, calculer le montant utilisé
+          if (projectTransactions.isNotEmpty) {
+            // Calculer les dépenses (expenses)
+            usedBudget = projectTransactions
+                .where((tx) => !tx.isIncome)
+                .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+            
+            // Calculer les revenus (income)
+            double totalRevenues = projectTransactions
+                .where((tx) => tx.isIncome)
+                .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+            
+            print('DEBUG: Montant utilisé calculé à partir des transactions: $usedBudget');    
+            print('DEBUG: Revenus calculés à partir des transactions: $totalRevenues');
+            
+            // Si nous avons des revenus, calculer le pourcentage par rapport aux revenus
+            if (totalRevenues > 0) {
+              budgetUsagePercentage = (usedBudget / totalRevenues) * 100;
+              print('DEBUG: Pourcentage d\'utilisation calculé par rapport aux revenus: $budgetUsagePercentage%');
+            } else if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
+              // Sinon, utiliser le budget alloué comme référence si disponible
+              budgetUsagePercentage = (usedBudget / project.budgetAllocated!) * 100;
+              print('DEBUG: Pourcentage d\'utilisation calculé par rapport au budget alloué: $budgetUsagePercentage%');
+            } else {
+              // Si pas de revenus et pas de budget alloué, montrer le pourcentage en fonction des dépenses
+              budgetUsagePercentage = usedBudget > 0 ? 100 : 0; // Si des dépenses existent sans revenus ni budget, 100%
+              print('DEBUG: Pourcentage d\'utilisation par défaut (sans revenus ni budget): $budgetUsagePercentage%');
+            }
+            budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
+            print('DEBUG: Pourcentage d\'utilisation final: $budgetUsagePercentage%');
+          } else {
+            // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
+            usedBudget = project.budgetConsumed ?? 0;
+            budgetUsagePercentage = project.budgetUsagePercentage;
+            print('DEBUG: Aucune transaction trouvée, utilisation des valeurs par défaut');
+            print('DEBUG: Budget utilisé par défaut: $usedBudget, Pourcentage: $budgetUsagePercentage%');
+          }
+        } else {
+          // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
+          usedBudget = project.budgetConsumed ?? 0;
+          budgetUsagePercentage = project.budgetUsagePercentage;
+          print('DEBUG: Aucune transaction disponible, utilisation des valeurs par défaut');
+          print('DEBUG: Budget utilisé par défaut: $usedBudget, Pourcentage: $budgetUsagePercentage%');
+        }
+        
+        // Déterminer la couleur en fonction du pourcentage d'utilisation
+        Color budgetColor;
+        if (budgetUsagePercentage < 50) {
+          budgetColor = Colors.green; // Moins de 50% du budget utilisé : vert
+        } else if (budgetUsagePercentage < 75) {
+          budgetColor = Colors.orange; // Entre 50% et 75% : orange
+        } else {
+          budgetColor = Colors.red; // Plus de 75% : rouge
+        }
         
         return BudgetOverviewData(
           projectName: project.name,
           projectId: project.id,
           allocatedBudget: project.budgetAllocated ?? 0,
-          usedBudget: project.budgetConsumed ?? 0,
-          color: _getBudgetColor(budgetUsagePercentage),
+          usedBudget: usedBudget,
+          color: budgetColor,
         );
       }).toList();
   }
@@ -400,12 +623,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
   
   Color _getBudgetColor(double percentage) {
-    if (percentage < 70) {
-      return Colors.green;
-    } else if (percentage < 90) {
-      return Colors.orange;
+    if (percentage < 50) {
+      return Colors.green; // Moins de 50% du budget utilisé : vert
+    } else if (percentage < 75) {
+      return Colors.orange; // Entre 50% et 75% : orange
     } else {
-      return Colors.red;
+      return Colors.red; // Plus de 75% : rouge
     }
   }
   
@@ -605,16 +828,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // Section des tâches et projets
                     SizedBox(
-                      height: 598, // Hauteur ajustée
+                      height: 730, 
                       child: TasksProjectsSection(
                         tasksByStatusData: _tasksByStatusData,
                         tasksByPriorityData: _tasksByPriorityData,
                         projectProgressData: _projectProgressData,
                         upcomingTasksData: _upcomingTasksData,
-                        onProjectTap: _navigateToProjectDetails,
-                        onTaskTap: _navigateToTaskDetails,
                         onSeeAllProjects: _navigateToProjectsList,
                         onSeeAllTasks: _navigateToTasksList,
+                        onProjectTap: _navigateToProjectDetails,
+                        onTaskTap: _navigateToTaskDetails,
                       ),
                     ),
                     
@@ -622,7 +845,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // Section des phases
                     SizedBox(
-                      height: 300, // Hauteur ajustée
+                      height: 350, 
                       child: PhasesSection(
                         phaseProgressData: _phaseProgressData,
                         onSeeAllPhases: _navigateToPhasesList,

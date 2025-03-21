@@ -14,7 +14,6 @@ import '../../widgets/custom_app_bar.dart';
 import '../projects/project_detail_screen.dart';
 import 'transaction_form_screen.dart';
 import 'transaction_list_screen.dart';
-import '../finance/project_transaction_screen.dart';
 
 class FinanceDashboardScreen extends StatefulWidget {
   const FinanceDashboardScreen({Key? key}) : super(key: key);
@@ -1167,7 +1166,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                         final result = await Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => ProjectTransactionScreen(
+                            builder: (context) => TransactionFormScreen(
                               projectId: project.id,
                             ),
                           ),
@@ -1352,7 +1351,7 @@ class _FinanceDashboardScreenState extends State<FinanceDashboardScreen> with Si
                     final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => ProjectTransactionScreen(
+                        builder: (context) => TransactionFormScreen(
                           projectId: project.id,
                         ),
                       ),

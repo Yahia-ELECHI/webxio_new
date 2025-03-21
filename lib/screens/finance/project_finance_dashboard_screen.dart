@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:fl_chart/fl_chart.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:ui' as ui;
+import 'dart:math';
 import '../dashboard/widgets/modern_project_selector.dart';
 import '../../models/project_transaction_model.dart';
 import '../../models/project_model.dart';
@@ -14,7 +16,21 @@ import '../../services/team_service/team_service.dart';
 import '../../services/notification_service.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../projects/project_detail_screen.dart';
-import 'project_transaction_screen.dart';
+import '../budget/transaction_form_screen.dart';
+
+// Classe de données pour les graphiques circulaires
+class ChartData {
+  final String category;
+  final double amount;
+  final Color color;
+  final String percentText;
+  final String amountText;
+
+  ChartData(this.category, this.amount, this.color, {
+    required this.percentText,
+    required this.amountText
+  });
+}
 
 class ProjectFinanceDashboardScreen extends StatefulWidget {
   const ProjectFinanceDashboardScreen({Key? key}) : super(key: key);
@@ -67,10 +83,6 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
     return project.name;
   }
   
-  // États pour les graphiques interactifs
-  int? _touchedExpenseIndex;
-  int? _touchedIncomeIndex;
-  
   // Filtres
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime _endDate = DateTime.now();
@@ -111,14 +123,14 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
         _isAdmin = isAdmin;
       });
       
-      // Charger les transactions selon le contexte (personnel ou équipe)
+      // Charger les transactions selon le contexte (projet spécifique ou tous les projets)
       List<ProjectTransaction> projectTransactions;
       
-      if (_isAdmin && _selectedProjectId != null) {
+      if (_selectedProjectId != null) {
         // Charger les transactions du projet sélectionné
         projectTransactions = await _projectFinanceService.getProjectProjectTransactions(_selectedProjectId!);
       } else {
-        // Charger toutes les transactions
+        // Charger toutes les transactions auxquelles l'utilisateur a accès
         projectTransactions = await _projectFinanceService.getAllProjectTransactions();
       }
       
@@ -264,7 +276,7 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const ProjectTransactionScreen(),
+              builder: (context) => const TransactionFormScreen(),
             ),
           );
           
@@ -537,125 +549,54 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
     }
     
     // Convertir en données pour le graphique
-    final List<PieChartSectionData> sections = [];
+    final List<ChartData> chartData = [];
     
     int colorIndex = 0;
-    List<String> categories = expensesByCategory.keys.toList();
     expensesByCategory.forEach((category, amount) {
       final percentage = (amount / _totalExpenses) * 100;
-      final isTouched = colorIndex == _touchedExpenseIndex;
-      final double radius = isTouched ? 55 : 45;
-      final double fontSize = isTouched ? 16.0 : 13.0;
-      final double opacity = isTouched ? 1.0 : 0.8;
-      
-      sections.add(
-        PieChartSectionData(
-          value: amount,
-          title: '${percentage.toStringAsFixed(1)}%',
-          color: colors[colorIndex % colors.length].withOpacity(opacity),
-          radius: radius,
-          titleStyle: TextStyle(
-            color: colors[colorIndex % colors.length],
-            fontWeight: FontWeight.bold,
-            fontSize: fontSize,
-            shadows: [
-              Shadow(
-                color: Colors.white,
-                blurRadius: 3,
-                offset: const Offset(0, 0),
-              ),
-            ],
-          ),
-          badgeWidget: null,
-          titlePositionPercentageOffset: 1.8,
-          showTitle: true,
-        ),
+      final chartDataItem = ChartData(
+        category,
+        amount,
+        colors[colorIndex % colors.length],
+        percentText: '${percentage.toStringAsFixed(1)}%',
+        amountText: NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(amount),
       );
+      
+      chartData.add(chartDataItem);
       
       colorIndex++;
     });
     
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          height: 200,
-          child: PieChart(
-            PieChartData(
-              sections: sections,
-              centerSpaceRadius: 50,
-              sectionsSpace: 2,
-              pieTouchData: PieTouchData(
-                touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                  setState(() {
-                    if (!event.isInterestedForInteractions ||
-                        pieTouchResponse == null ||
-                        pieTouchResponse.touchedSection == null) {
-                      _touchedExpenseIndex = null;
-                      return;
-                    }
-                    _touchedExpenseIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
-                  });
-                },
-              ),
-              centerSpaceColor: Colors.grey[100],
-              borderData: FlBorderData(show: false),
+    return SfCircularChart(
+      series: <CircularSeries>[
+        PieSeries(
+          dataSource: chartData,
+          xValueMapper: (data, index) => data.category,
+          yValueMapper: (data, index) => data.amount, 
+          pointColorMapper: (data, index) => data.color,
+          dataLabelMapper: (data, index) => data.percentText,
+          dataLabelSettings: const DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.outside,
+            connectorLineSettings: ConnectorLineSettings(
+              type: ConnectorType.curve,
+              length: '10%',
             ),
           ),
-        ),
-        const SizedBox(height: 20),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 24,
-            runSpacing: 12,
-            children: expensesByCategory.entries.map((entry) {
-              final index = categories.indexOf(entry.key);
-              final color = colors[index % colors.length];
-              final isTouched = index == _touchedExpenseIndex;
-              
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _touchedExpenseIndex = _touchedExpenseIndex == index ? null : index;
-                  });
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  padding: EdgeInsets.all(isTouched ? 8.0 : 4.0),
-                  decoration: BoxDecoration(
-                    color: isTouched ? color.withOpacity(0.2) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${entry.key}: ${NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(entry.value)}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
+          enableTooltip: true,
+          animationDuration: 1200,
+          explode: true,
+          explodeIndex: 0,
+          explodeOffset: '5%',
+          explodeGesture: ActivationMode.singleTap,
         ),
       ],
+      legend: Legend(
+        isVisible: true,
+        position: LegendPosition.bottom,
+        overflowMode: LegendItemOverflowMode.wrap,
+      ),
+      tooltipBehavior: TooltipBehavior(enable: true),
     );
   }
   
@@ -696,125 +637,54 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
     }
     
     // Convertir en données pour le graphique
-    final List<PieChartSectionData> sections = [];
+    final List<ChartData> chartData = [];
     
     int colorIndex = 0;
-    List<String> categories = incomesByCategory.keys.toList();
     incomesByCategory.forEach((category, amount) {
       final percentage = (amount / _totalRevenues) * 100;
-      final isTouched = colorIndex == _touchedIncomeIndex;
-      final double radius = isTouched ? 55 : 45;
-      final double fontSize = isTouched ? 16.0 : 13.0;
-      final double opacity = isTouched ? 1.0 : 0.8;
-      
-      sections.add(
-        PieChartSectionData(
-          value: amount,
-          title: '${percentage.toStringAsFixed(1)}%',
-          color: colors[colorIndex % colors.length].withOpacity(opacity),
-          radius: radius,
-          titleStyle: TextStyle(
-            color: colors[colorIndex % colors.length],
-            fontWeight: FontWeight.bold,
-            fontSize: fontSize,
-            shadows: [
-              Shadow(
-                color: Colors.white,
-                blurRadius: 3,
-                offset: const Offset(0, 0),
-              ),
-            ],
-          ),
-          badgeWidget: null,
-          titlePositionPercentageOffset: 1.8,
-          showTitle: true,
-        ),
+      final chartDataItem = ChartData(
+        category,
+        amount,
+        colors[colorIndex % colors.length],
+        percentText: '${percentage.toStringAsFixed(1)}%',
+        amountText: NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(amount),
       );
+      
+      chartData.add(chartDataItem);
       
       colorIndex++;
     });
     
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          height: 200,
-          child: PieChart(
-            PieChartData(
-              sections: sections,
-              centerSpaceRadius: 50,
-              sectionsSpace: 2,
-              pieTouchData: PieTouchData(
-                touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                  setState(() {
-                    if (!event.isInterestedForInteractions ||
-                        pieTouchResponse == null ||
-                        pieTouchResponse.touchedSection == null) {
-                      _touchedIncomeIndex = null;
-                      return;
-                    }
-                    _touchedIncomeIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
-                  });
-                },
-              ),
-              centerSpaceColor: Colors.grey[100],
-              borderData: FlBorderData(show: false),
+    return SfCircularChart(
+      series: <CircularSeries>[
+        PieSeries(
+          dataSource: chartData,
+          xValueMapper: (data, index) => data.category,
+          yValueMapper: (data, index) => data.amount, 
+          pointColorMapper: (data, index) => data.color,
+          dataLabelMapper: (data, index) => data.percentText,
+          dataLabelSettings: const DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.outside,
+            connectorLineSettings: ConnectorLineSettings(
+              type: ConnectorType.curve,
+              length: '10%',
             ),
           ),
-        ),
-        const SizedBox(height: 20),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 24,
-            runSpacing: 12,
-            children: incomesByCategory.entries.map((entry) {
-              final index = categories.indexOf(entry.key);
-              final color = colors[index % colors.length];
-              final isTouched = index == _touchedIncomeIndex;
-              
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _touchedIncomeIndex = _touchedIncomeIndex == index ? null : index;
-                  });
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  padding: EdgeInsets.all(isTouched ? 8.0 : 4.0),
-                  decoration: BoxDecoration(
-                    color: isTouched ? color.withOpacity(0.2) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${entry.key}: ${NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(entry.value)}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
+          enableTooltip: true,
+          animationDuration: 1200,
+          explode: true,
+          explodeIndex: 0,
+          explodeOffset: '5%',
+          explodeGesture: ActivationMode.singleTap,
         ),
       ],
+      legend: Legend(
+        isVisible: true,
+        position: LegendPosition.bottom,
+        overflowMode: LegendItemOverflowMode.wrap,
+      ),
+      tooltipBehavior: TooltipBehavior(enable: true),
     );
   }
   
@@ -886,13 +756,12 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
             ],
           ),
           onTap: () async {
-            // Afficher le détail de la transaction ou permettre de l'éditer
+            // Afficher le formulaire d'édition de la transaction
             final result = await Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => ProjectTransactionScreen(
-                  projectId: transaction.projectId,
-                  initialProjectId: transaction.projectId,
+                builder: (context) => TransactionFormScreen(
+                  transaction: transaction,
                 ),
               ),
             );
@@ -1104,7 +973,7 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                         final result = await Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => ProjectTransactionScreen(
+                            builder: (context) => TransactionFormScreen(
                               projectId: project.id,
                               initialProjectId: project.id,
                             ),
@@ -1331,7 +1200,7 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                                     final result = await Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => ProjectTransactionScreen(
+                                        builder: (context) => TransactionFormScreen(
                                           projectId: project.id,
                                           initialProjectId: project.id,
                                         ),
@@ -1420,7 +1289,7 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const ProjectTransactionScreen(),
+                    builder: (context) => const TransactionFormScreen(),
                   ),
                 );
                 
@@ -1581,13 +1450,12 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                 ),
               ),
               onTap: () async {
-                // Afficher le détail de la transaction ou permettre de l'éditer
+                // Afficher le formulaire d'édition de la transaction
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => ProjectTransactionScreen(
-                      projectId: transaction.projectId,
-                      initialProjectId: transaction.projectId,
+                    builder: (context) => TransactionFormScreen(
+                      transaction: transaction,
                     ),
                   ),
                 );

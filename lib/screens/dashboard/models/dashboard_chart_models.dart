@@ -92,6 +92,10 @@ class PhaseProgressData {
   final double progressPercentage;
   final String status;
   final Color statusColor;
+  final double? budgetAllocated;
+  final double? budgetConsumed;
+  final double? budgetUsagePercentage;
+  final Color? budgetStatusColor;
 
   PhaseProgressData({
     required this.phaseId,
@@ -101,5 +105,9 @@ class PhaseProgressData {
     required this.progressPercentage,
     required this.status,
     required this.statusColor,
+    this.budgetAllocated,
+    this.budgetConsumed,
+    this.budgetUsagePercentage,
+    this.budgetStatusColor,
   });
 }
