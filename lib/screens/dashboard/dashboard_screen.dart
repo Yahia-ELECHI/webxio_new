@@ -956,10 +956,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ).length;
     
     // Calculer le nombre de phases en cours
-    final int inProgressPhases = _phasesList.where((phase) => 
-      phase.status.toLowerCase() == 'en cours' || 
-      phase.status.toLowerCase() == 'in progress' ||
-      phase.status.toLowerCase() == 'in_progress'
+    final int inProgressPhases = _phasesList.where((phase) =>     
+      phase.status.toLowerCase() == 'completed' ||
+      phase.status.toLowerCase() == 'terminée'
     ).length;
     
     return GridView(
@@ -987,10 +986,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           onTap: _navigateToTasksList,
         ),
         _buildSummaryCard(
-          title: 'Phases en cours',
-          value: inProgressPhases.toString(),
-          icon: Icons.timeline,
-          color: Colors.orange,
+          title: 'Phases terminées',
+          value: '$inProgressPhases/${_phasesList.length}',
+          icon: Icons.checklist_rounded,
+          color: Colors.green,
           onTap: _navigateToPhasesList,
         ),
       ],
@@ -1039,6 +1038,20 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Récupérer la largeur de l'écran pour adapter la taille des éléments
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isSmallScreen = screenWidth < 400;
+    final bool isMediumScreen = screenWidth >= 400 && screenWidth < 600;
+    
+    // Adapter la taille des éléments en fonction de la taille de l'écran
+    final double iconSize = isSmallScreen ? 16 : 20;
+    final double containerSize = isSmallScreen ? 32 : 40;
+    final double fontSize = isSmallScreen ? 11 : (isMediumScreen ? 12 : 15);
+    final double titleFontSize = isSmallScreen ? 10 : (isMediumScreen ? 11 : 12);
+    final EdgeInsets padding = isSmallScreen 
+        ? const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0)
+        : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0);
+    
     return GestureDetector(
       onTapDown: (_) => setState(() => _isPressed = true),
       onTapUp: (_) => setState(() => _isPressed = false),
@@ -1054,12 +1067,12 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
           child: Stack(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                padding: padding,
                 child: Row(
                   children: [
                     Container(
-                      width: 40,
-                      height: 40,
+                      width: containerSize,
+                      height: containerSize,
                       decoration: BoxDecoration(
                         color: widget.color.withOpacity(0.2),
                         shape: BoxShape.circle,
@@ -1067,10 +1080,10 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                       child: Icon(
                         widget.icon,
                         color: widget.color,
-                        size: 20,
+                        size: iconSize,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: isSmallScreen ? 8 : 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1079,9 +1092,9 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                           const SizedBox(height: 4),
                           Text(
                             widget.value,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 15,
+                              fontSize: fontSize,
                             ),
                           ),
                         ],
@@ -1091,13 +1104,13 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                 ),
               ),
               // Étiquette transparente qui apparaît lors du clic
-              if (_isPressed)
+              //if (_isPressed)
                 Positioned(
                   bottom: 0,
                   left: 0,
                   right: 0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+                    padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 8.0),
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: const BorderRadius.only(
@@ -1108,9 +1121,9 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                     child: Text(
                       widget.title,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
-                        fontSize: 12,
+                        fontSize: titleFontSize,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
