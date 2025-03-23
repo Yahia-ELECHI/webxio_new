@@ -14,6 +14,7 @@ import '../../services/project_service/project_service.dart';
 import '../../services/phase_service/phase_service.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/cache_service.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../projects/project_detail_screen.dart';
 import '../budget/transaction_form_screen.dart';
@@ -45,6 +46,7 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   final TeamService _teamService = TeamService();
   final ProjectFinanceService _projectFinanceService = ProjectFinanceService();
   final NotificationService _notificationService = NotificationService();
+  final CacheService _cacheService = CacheService();
   
   late TabController _tabController;
   
@@ -111,17 +113,128 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
     });
     
     try {
+      // 1. Vérifier si des données complètes sont disponibles dans le cache
+      final cachedProjects = _cacheService.getCachedProjects();
+      final cachedTransactions = _cacheService.getCachedTransactions(null);
+      
+      // Si nous avons les données principales en cache
+      if (cachedProjects != null && cachedProjects.isNotEmpty && 
+          cachedTransactions != null && cachedTransactions.isNotEmpty) {
+        
+        // Convertir les données JSON du cache en objets
+        final projects = cachedProjects.map((json) => Project.fromJson(json)).toList();
+        final projectTransactions = cachedTransactions.map((json) => ProjectTransaction.fromJson(json)).toList();
+        
+        // Filtrer les transactions selon le contexte (projet spécifique ou tous les projets)
+        List<ProjectTransaction> filteredTransactions = projectTransactions;
+        if (_selectedProjectId != null) {
+          filteredTransactions = projectTransactions
+              .where((t) => t.projectId == _selectedProjectId)
+              .toList();
+        }
+        
+        // Extraire les transactions récentes (les 20 dernières)
+        final recentTransactions = filteredTransactions.take(20).toList();
+        
+        // Trouver les projets avec solde négatif (alerte)
+        final projectsWithAlert = projects.where((project) {
+          // Calculer les entrées et sorties d'argent pour ce projet
+          double projectIncome = 0.0;
+          double projectExpenses = 0.0;
+          
+          for (final transaction in projectTransactions) {
+            if (transaction.projectId == project.id) {
+              if (transaction.isIncome) {
+                projectIncome += transaction.absoluteAmount;
+              } else {
+                projectExpenses += transaction.absoluteAmount;
+              }
+            }
+          }
+          
+          // Un projet est en alerte si ses dépenses sont supérieures à ses revenus
+          return projectExpenses > projectIncome;
+        }).toList();
+        
+        // Calculer les statistiques financières
+        final totalRevenues = filteredTransactions.where((t) => t.isIncome).fold(0.0, (sum, t) => sum + t.absoluteAmount);
+        final totalExpenses = filteredTransactions.where((t) => !t.isIncome).fold(0.0, (sum, t) => sum + t.absoluteAmount);
+        final totalBalance = totalRevenues - totalExpenses;
+        
+        // Mise à jour de l'UI avec les données du cache
+        setState(() {
+          _projectTransactions = filteredTransactions;
+          _projects = projects;
+          _recentTransactions = recentTransactions;
+          _projectsWithBalanceAlert = projectsWithAlert;
+          _totalRevenues = totalRevenues;
+          _totalExpenses = totalExpenses;
+          _totalBalance = totalBalance;
+        });
+        
+        // Simuler un chargement bref pour permettre l'animation des graphiques
+        // Maintenir _isLoading à true pendant un court instant
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
+        });
+        
+        // Vérifier si l'utilisateur est administrateur d'une équipe en arrière-plan
+        _checkAdminStatusInBackground();
+        
+        // Charger les données fraîches en arrière-plan (sans bloquer l'interface)
+        _loadDataInBackground();
+        return;
+      }
+      
+      // Si aucune donnée en cache, charger normalement
+      await _loadDataFromServer();
+      
+    } catch (e) {
+      print('Erreur lors du chargement des données: $e');
+      setState(() {
+        _isLoading = false;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors du chargement des données: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  // Vérification du statut d'administrateur en arrière-plan
+  Future<void> _checkAdminStatusInBackground() async {
+    try {
+      final userId = _projectFinanceService.supabaseClient.auth.currentUser!.id;
+      final adminTeams = await _teamService.getUserAdminTeams(userId);
+      
+      if (mounted) {
+        setState(() {
+          _adminTeams = adminTeams;
+          _isAdmin = adminTeams.isNotEmpty;
+        });
+      }
+    } catch (e) {
+      print('Erreur lors de la vérification du statut admin: $e');
+    }
+  }
+  
+  // Chargement des données à partir du serveur
+  Future<void> _loadDataFromServer() async {
+    try {
       final userId = _projectFinanceService.supabaseClient.auth.currentUser!.id;
       
       // Vérifier si l'utilisateur est administrateur d'une équipe
       final adminTeams = await _teamService.getUserAdminTeams(userId);
       final isAdmin = adminTeams.isNotEmpty;
-      
-      // Mise à jour des équipes admin de l'utilisateur
-      setState(() {
-        _adminTeams = adminTeams;
-        _isAdmin = isAdmin;
-      });
       
       // Charger les transactions selon le contexte (projet spécifique ou tous les projets)
       List<ProjectTransaction> projectTransactions;
@@ -185,7 +298,6 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
         
         // Créer une notification pour le solde négatif
         if (projectBalance < 0) {
-          final userId = _projectFinanceService.supabaseClient.auth.currentUser!.id;
           await _notificationService.createProjectBalanceAlertNotification(
             project.id,
             project.name,
@@ -195,7 +307,18 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
         }
       }
       
+      // Mettre en cache les données pour la prochaine fois
+      if (projects.isNotEmpty) {
+        _cacheService.cacheProjects(projects.map((p) => p.toJson()).toList());
+      }
+      
+      if (projectTransactions.isNotEmpty) {
+        _cacheService.cacheTransactions(null, projectTransactions.map((t) => t.toJson()).toList());
+      }
+      
       setState(() {
+        _adminTeams = adminTeams;
+        _isAdmin = isAdmin;
         _projectTransactions = projectTransactions;
         _projects = projects;
         _recentTransactions = recentTransactions;
@@ -206,22 +329,21 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
         _isLoading = false;
       });
     } catch (e) {
-      print('Erreur lors du chargement des données: $e');
-      setState(() {
-        _isLoading = false;
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur lors du chargement des données: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      print('Erreur lors du chargement des données du serveur: $e');
+      throw e;
     }
   }
-
+  
+  // Chargement des données en arrière-plan
+  Future<void> _loadDataInBackground() async {
+    try {
+      await _loadDataFromServer();
+    } catch (e) {
+      // Silencieux pour ne pas perturber l'utilisateur
+      print('Erreur lors du chargement en arrière-plan: $e');
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
