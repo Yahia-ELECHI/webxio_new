@@ -103,23 +103,28 @@ class ModernTeamCard extends StatelessWidget {
                               } else {
                                 return SizedBox(
                                   height: 25, // Hauteur fixe pour le défilement
-                                  child: Marquee(
-                                    text: team.name,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 18,
+                                  // Optimisation 3: Isoler l'animation avec RepaintBoundary
+                                  child: RepaintBoundary(
+                                    child: Marquee(
+                                      text: team.name,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 18,
+                                      ),
+                                      scrollAxis: Axis.horizontal,
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      blankSpace: 40.0,
+                                      // Optimisation 1: Réduire la vitesse d'animation
+                                      velocity: 20.0,
+                                      // Optimisation 2: Augmenter la pause entre les cycles
+                                      pauseAfterRound: const Duration(seconds: 20),
+                                      startPadding: 10.0,
+                                      accelerationDuration: const Duration(milliseconds: 500),
+                                      accelerationCurve: Curves.linear,
+                                      decelerationDuration: const Duration(milliseconds: 500),
+                                      decelerationCurve: Curves.easeOut,
                                     ),
-                                    scrollAxis: Axis.horizontal,
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    blankSpace: 40.0,
-                                    velocity: 35.0,
-                                    pauseAfterRound: const Duration(seconds: 1),
-                                    startPadding: 10.0,
-                                    accelerationDuration: const Duration(milliseconds: 500),
-                                    accelerationCurve: Curves.linear,
-                                    decelerationDuration: const Duration(milliseconds: 500),
-                                    decelerationCurve: Curves.easeOut,
                                   ),
                                 );
                               }

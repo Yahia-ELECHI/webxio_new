@@ -351,22 +351,27 @@ class ProjectSelectorButton extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     );
                   } else {
-                    return Marquee(
-                      text: displayText,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
+                    // Optimisation 3: Isoler l'animation avec RepaintBoundary
+                    return RepaintBoundary(
+                      child: Marquee(
+                        text: displayText,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        scrollAxis: Axis.horizontal,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        blankSpace: 40.0,
+                        // Optimisation 1: Réduire la vitesse d'animation
+                        velocity: 20.0,
+                        // Optimisation 2: Augmenter la pause entre les cycles
+                        pauseAfterRound: const Duration(seconds: 60),
+                        startPadding: 10.0,
+                        accelerationDuration: const Duration(milliseconds: 500),
+                        accelerationCurve: Curves.linear,
+                        decelerationDuration: const Duration(milliseconds: 500),
+                        decelerationCurve: Curves.easeOut,
                       ),
-                      scrollAxis: Axis.horizontal,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      blankSpace: 40.0,
-                      velocity: 35.0,
-                      pauseAfterRound: const Duration(seconds: 1),
-                      startPadding: 10.0,
-                      accelerationDuration: const Duration(milliseconds: 500),
-                      accelerationCurve: Curves.linear,
-                      decelerationDuration: const Duration(milliseconds: 500),
-                      decelerationCurve: Curves.easeOut,
                     );
                   }
                 },
