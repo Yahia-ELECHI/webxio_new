@@ -19,39 +19,53 @@ import 'screens/teams/teams_screen.dart';
 import 'screens/teams/invitations_screen.dart';
 import 'screens/teams/invitation_acceptance_screen.dart';
 import 'screens/budget/finance_dashboard_screen.dart';
-import 'screens/finance/project_finance_dashboard_screen.dart';
+import 'screens/finance/project_finance_dashboard_screen.dart'; // Nouvel emplacement plus approprié
 import 'screens/notifications/notifications_screen.dart';
 import 'widgets/sidebar_menu.dart';
 import 'widgets/islamic_patterns.dart';
 import 'widgets/notification_popup.dart';
 import 'services/auth_service.dart';
+import 'services/cache_service.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:io';
 import 'package:flutter_svg/flutter_svg.dart';
 
+// Clé globale pour accéder au navigateur depuis n'importe où
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+// Instance de AppLinks pour la gestion des liens profonds
 final appLinks = AppLinks();
 
 void main() async {
+  // Capture toutes les erreurs non gérées
   FlutterError.onError = (FlutterErrorDetails details) {
     print('FlutterError: ${details.exception}');
     print('Stack trace: ${details.stack}');
   };
 
+  // Initialisation Flutter
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Initialiser les données de locale
   await initializeDateFormatting('fr_FR', null);
 
+  // Initialiser le service de cache
+  await CacheService().initialize();
+
+  // Charger les variables d'environnement
   await dotenv.load(fileName: ".env");
 
+  // Lancer l'application sans attendre Supabase
   runApp(const MyApp());
 
+  // Initialiser Supabase en arrière-plan
   _initializeSupabase();
 
+  // Gestion des liens profonds (deep links)
   _handleDeepLinks();
 }
 
+// Initialiser Supabase en arrière-plan
 Future<void> _initializeSupabase() async {
   try {
     print("Tentative d'initialisation de Supabase...");
@@ -75,6 +89,7 @@ Future<void> _initializeSupabase() async {
   }
 }
 
+// Gestion des liens profonds (deep links)
 Future<void> _handleDeepLinks() async {
   try {
     final initialLink = await appLinks.getInitialLink();
@@ -83,6 +98,7 @@ Future<void> _handleDeepLinks() async {
       _processLink(initialLink.toString());
     }
 
+    // Écouter les liens dynamiques (DynamicLinks)
     appLinks.uriLinkStream.listen((link) {
       print("Lien reçu: $link");
       _processLink(link.toString());
@@ -94,17 +110,20 @@ Future<void> _handleDeepLinks() async {
   }
 }
 
+// Traiter un lien deep link
 void _processLink(String link) {
   try {
     final uri = Uri.parse(link);
 
     if (uri.host == 'invitation' || uri.path == '/invitation') {
+      // Extraire les paramètres
       final token = uri.queryParameters['token'] ?? '';
       final teamId = uri.queryParameters['team'] ?? '';
 
       if (token.isNotEmpty && teamId.isNotEmpty) {
         print("Invitation reçue - Token: $token, Team ID: $teamId");
 
+        // Accéder au navigateur global
         navigatorKey.currentState?.pushNamed(
           '/invitation',
           arguments: {
@@ -182,10 +201,12 @@ class MyApp extends StatelessWidget {
         '/profile': (context) => const ProfileScreen(),
         '/notifications': (context) => const NotificationsScreen(),
         '/invitation': (context) {
+          // Récupérer les paramètres d'URL pour l'invitation
           final args = ModalRoute.of(context)!.settings.arguments as Map<String, String>?;
           final token = args?['token'] ?? Uri.base.queryParameters['token'] ?? '';
           final teamId = args?['team'] ?? Uri.base.queryParameters['team'] ?? '';
 
+          // Rediriger vers l'écran d'acceptation d'invitation
           return InvitationAcceptanceScreen(
             token: token,
             teamId: teamId,
@@ -193,7 +214,7 @@ class MyApp extends StatelessWidget {
         },
       },
       initialRoute: '/',
-      navigatorKey: navigatorKey,
+      navigatorKey: navigatorKey, // Ajouter la clé de navigateur globale
     );
   }
 }
@@ -262,6 +283,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Logo doré avec animation de pulsation
                 const LogoWidget(
                   isGold: false,
                   size: 180,
@@ -323,7 +345,7 @@ class _MainAppScreenState extends State<MainAppScreen> {
     const TeamsScreen(),
     const CalendarScreen(),
     const StatisticsScreen(),
-    const ProjectFinanceDashboardScreen(),
+    const ProjectFinanceDashboardScreen(), // Nouveau tableau de bord financier avec sélecteur moderne
     const ProfileScreen(),
   ];
 
@@ -348,6 +370,7 @@ class _MainAppScreenState extends State<MainAppScreen> {
           ? _screens[_selectedIndex]
           : Row(
               children: [
+                // Menu latéral
                 SidebarMenu(
                   onItemSelected: (index) {
                     setState(() {
@@ -357,6 +380,7 @@ class _MainAppScreenState extends State<MainAppScreen> {
                   selectedIndex: _selectedIndex,
                 ),
 
+                // Contenu principal
                 Expanded(
                   child: _screens[_selectedIndex],
                 ),
@@ -412,7 +436,7 @@ class _MainAppScreenState extends State<MainAppScreen> {
                   setState(() {
                     _selectedIndex = index;
                   });
-                  Navigator.pop(context);
+                  Navigator.pop(context); // Fermer le drawer après sélection
                 },
                 selectedIndex: _selectedIndex,
                 isDrawer: true,
