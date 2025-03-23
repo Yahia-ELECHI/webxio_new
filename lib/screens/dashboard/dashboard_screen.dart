@@ -97,11 +97,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       // Chargement des projets
       _projectsList = await _projectService.getAllProjects();
-      print('DEBUG: Nombre de projets chargés: ${_projectsList.length}');
       
       // Chargement des données selon le projet sélectionné ou tous les projets
       if (!_showAllProjects && _selectedProjectId != null) {
-        print('DEBUG: Mode projet spécifique, ID: $_selectedProjectId');
         
         // Charger les tâches du projet sélectionné
         _tasksList = await _taskService.getTasksByProject(_selectedProjectId!);
@@ -115,12 +113,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         
         // En mode projet spécifique, récupérer uniquement les transactions du projet
         _projectTransactionsList = await _projectFinanceService.getProjectTransactions(_selectedProjectId!);
-        print('DEBUG: Transactions chargées pour le projet spécifique: ${_projectTransactionsList.length}');
-        
-        // Pour debug: afficher les IDs des transactions
-        for (var tx in _projectTransactionsList) {
-          print('DEBUG: Transaction ID: ${tx.id}, Projet: ${tx.projectId}, Montant: ${tx.amount}');
-        }
         
         // Charger l'historique des tâches pour le projet sélectionné
         final allTasksInProject = await _taskService.getTasksByProject(_selectedProjectId!);
@@ -147,12 +139,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         
         // Charger toutes les transactions accessibles par l'utilisateur
         _projectTransactionsList = await _projectFinanceService.getAllProjectTransactions();
-        print('DEBUG: Nombre total de transactions chargées: ${_projectTransactionsList.length}');
-        
-        // Pour debug: afficher les IDs des transactions
-        for (var tx in _projectTransactionsList) {
-          print('DEBUG: Transaction ID: ${tx.id}, Projet: ${tx.projectId}, Montant: ${tx.amount}');
-        }
         
         // Créer un mapping des tâches
         _tasksMap = {for (var task in _tasksList) task.id: task};
@@ -251,11 +237,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
   
   void _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks) {
-    print('DEBUG: Préparation des données de progression pour ${projects.length} projets');
-    print('DEBUG: Nombre total de transactions disponibles: ${_projectTransactionsList.length}');
-    
     _projectProgressData = projects.map((project) {
-      print('DEBUG: Traitement du projet ${project.name} (ID: ${project.id})');
       
       // Calcul du pourcentage de progression
       final projectPhases = phases.where((phase) => phase.projectId == project.id).toList();
@@ -268,17 +250,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           task.status.toLowerCase() == 'completed'
         ).length;
         progressPercentage = (completedTasks / projectTasks.length) * 100;
-        print('DEBUG: Tâches complétées: $completedTasks/${projectTasks.length}, Progression: $progressPercentage%');
       }
       
       // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
       double budgetUsagePercentage = 0;
-      print('DEBUG: Budget alloué: ${project.budgetAllocated}, Budget consommé (valeur statique): ${project.budgetConsumed}');
-      print('DEBUG: Pourcentage d\'utilisation par défaut: ${project.budgetUsagePercentage}%');
       
       if (_projectTransactionsList.isNotEmpty) {
         final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
-        print('DEBUG: Nombre de transactions trouvées pour ce projet: ${projectTransactions.length}');
         
         // Si on a trouvé des transactions pour ce projet, calculer le pourcentage d'utilisation
         if (projectTransactions.isNotEmpty) {
@@ -292,33 +270,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
               .where((tx) => tx.isIncome)
               .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
           
-          print('DEBUG: Montant utilisé calculé à partir des transactions: $usedBudget');
-          print('DEBUG: Revenus calculés à partir des transactions: $totalRevenues');
-          
           // Si nous avons des revenus, calculer le pourcentage par rapport aux revenus
           if (totalRevenues > 0) {
             budgetUsagePercentage = (usedBudget / totalRevenues) * 100;
-            print('DEBUG: Pourcentage d\'utilisation calculé par rapport aux revenus: $budgetUsagePercentage%');
           } else if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
             // Sinon, utiliser le budget alloué comme référence si disponible
             budgetUsagePercentage = (usedBudget / project.budgetAllocated!) * 100;
-            print('DEBUG: Pourcentage d\'utilisation calculé par rapport au budget alloué: $budgetUsagePercentage%');
           } else {
             // Si pas de revenus et pas de budget alloué, montrer le pourcentage en fonction des dépenses
             budgetUsagePercentage = usedBudget > 0 ? 100 : 0; // Si des dépenses existent sans revenus ni budget, 100%
-            print('DEBUG: Pourcentage d\'utilisation par défaut (sans revenus ni budget): $budgetUsagePercentage%');
           }
           budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
-          print('DEBUG: Pourcentage d\'utilisation final: $budgetUsagePercentage%');
         } else {
           // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
           budgetUsagePercentage = project.budgetUsagePercentage;
-          print('DEBUG: Aucune transaction disponible, utilisation de la valeur par défaut: $budgetUsagePercentage%');
         }
       } else {
         // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
         budgetUsagePercentage = project.budgetUsagePercentage;
-        print('DEBUG: Aucune transaction disponible, utilisation de la valeur par défaut: $budgetUsagePercentage%');
       }
       
       // Déterminer la couleur en fonction du pourcentage d'utilisation
@@ -368,6 +337,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   
   void _preparePhaseProgressData(List<Phase> phases, List<Task> tasks) {
     _phaseProgressData = phases.map((phase) {
+      
       // Calcul du pourcentage de progression
       final phaseTasks = tasks.where((task) => task.phaseId == phase.id).toList();
       
@@ -449,8 +419,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
   
   void _prepareBudgetOverviewData(List<Project> projects) {
-    print('DEBUG: Préparation des données budgétaires pour ${projects.length} projets');
-    print('DEBUG: Nombre total de transactions disponibles: ${_projectTransactionsList.length}');
     
     // Filtrer les projets avec un budget alloué ou des transactions
     List<Project> relevantProjects = projects.where((project) {
@@ -464,12 +432,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return hasBudget || hasTransactions;
     }).toList();
     
-    print('DEBUG: Nombre de projets pertinents pour les données budgétaires: ${relevantProjects.length}');
-    
     _budgetOverviewData = relevantProjects
       .map((project) {
-        print('DEBUG: Traitement du projet ${project.name} (ID: ${project.id})');
-        print('DEBUG: Budget alloué: ${project.budgetAllocated}, Budget consommé (valeur statique): ${project.budgetConsumed}');
         
         // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
         double usedBudget = 0;
@@ -477,7 +441,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         
         if (_projectTransactionsList.isNotEmpty) {
           final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
-          print('DEBUG: Nombre de transactions trouvées pour ce projet: ${projectTransactions.length}');
           
           // Si on a trouvé des transactions pour ce projet, calculer le montant utilisé
           if (projectTransactions.isNotEmpty) {
@@ -491,37 +454,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 .where((tx) => tx.isIncome)
                 .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
             
-            print('DEBUG: Montant utilisé calculé à partir des transactions: $usedBudget');    
-            print('DEBUG: Revenus calculés à partir des transactions: $totalRevenues');
-            
             // Si nous avons des revenus, calculer le pourcentage par rapport aux revenus
             if (totalRevenues > 0) {
               budgetUsagePercentage = (usedBudget / totalRevenues) * 100;
-              print('DEBUG: Pourcentage d\'utilisation calculé par rapport aux revenus: $budgetUsagePercentage%');
             } else if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
               // Sinon, utiliser le budget alloué comme référence si disponible
               budgetUsagePercentage = (usedBudget / project.budgetAllocated!) * 100;
-              print('DEBUG: Pourcentage d\'utilisation calculé par rapport au budget alloué: $budgetUsagePercentage%');
             } else {
               // Si pas de revenus et pas de budget alloué, montrer le pourcentage en fonction des dépenses
               budgetUsagePercentage = usedBudget > 0 ? 100 : 0; // Si des dépenses existent sans revenus ni budget, 100%
-              print('DEBUG: Pourcentage d\'utilisation par défaut (sans revenus ni budget): $budgetUsagePercentage%');
             }
             budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
-            print('DEBUG: Pourcentage d\'utilisation final: $budgetUsagePercentage%');
           } else {
             // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
             usedBudget = project.budgetConsumed ?? 0;
             budgetUsagePercentage = project.budgetUsagePercentage;
-            print('DEBUG: Aucune transaction trouvée, utilisation des valeurs par défaut');
-            print('DEBUG: Budget utilisé par défaut: $usedBudget, Pourcentage: $budgetUsagePercentage%');
           }
         } else {
           // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
           usedBudget = project.budgetConsumed ?? 0;
           budgetUsagePercentage = project.budgetUsagePercentage;
-          print('DEBUG: Aucune transaction disponible, utilisation des valeurs par défaut');
-          print('DEBUG: Budget utilisé par défaut: $usedBudget, Pourcentage: $budgetUsagePercentage%');
         }
         
         // Déterminer la couleur en fonction du pourcentage d'utilisation

@@ -328,7 +328,7 @@ class ProjectFinanceService {
         return [];
       }
       
-      print('DEBUG ProjectFinanceService: Projets accessibles pour l\'utilisateur ${userId}: ${projectIds.join(', ')}');
+      // print('DEBUG ProjectFinanceService: Projets accessibles pour l\'utilisateur ${userId}: ${projectIds.join(', ')}');
       
       // Récupérer les transactions liées à ces projets
       final response = await _supabase
