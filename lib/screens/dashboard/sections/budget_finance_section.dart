@@ -20,16 +20,14 @@ class BudgetFinanceSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        SizedBox(
-          height: 650, // Augmenter la hauteur pour donner plus d'espace à la WebView
+        Expanded(
           child: CagnotteWebView(
             title: 'Cagnotte en ligne',
             onSeeAllPressed: onSeeAllBudget,
           ),
         ),
         const SizedBox(height: 16),
-        SizedBox(
-          height: 265,
+        Expanded(
           child: _buildRecentTransactionsCard(),
         ),
       ],

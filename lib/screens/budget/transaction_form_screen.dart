@@ -1,30 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import '../../models/budget_model.dart';
-import '../../models/budget_transaction_model.dart';
 import '../../models/project_model.dart';
 import '../../models/phase_model.dart';
 import '../../models/task_model.dart';
-import '../../services/budget_service.dart';
+import '../../models/project_transaction_model.dart';
+import '../../services/project_finance_service.dart';
 import '../../services/project_service/project_service.dart';
 import '../../utils/snackbar_helper.dart';
 import '../../utils/constants.dart';
 
 class TransactionFormScreen extends StatefulWidget {
-  final BudgetTransaction? transaction; // Si null, c'est une nouvelle transaction
-  final String? budgetId; // ID du budget pour une nouvelle transaction
+  final ProjectTransaction? transaction; // Si null, c'est une nouvelle transaction
   final String? projectId; // ID du projet pour une nouvelle transaction
   final String? phaseId; // ID de la phase pour une nouvelle transaction
   final String? taskId; // ID de la tâche pour une nouvelle transaction
+  final String? initialProjectId; // ID du projet initialement sélectionné
 
   const TransactionFormScreen({
     Key? key, 
     this.transaction, 
-    this.budgetId,
     this.projectId,
     this.phaseId,
     this.taskId,
+    this.initialProjectId,
   }) : super(key: key);
 
   @override
@@ -35,28 +34,37 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
-  final _budgetService = BudgetService();
+  final _projectFinanceService = ProjectFinanceService();
   final _projectService = ProjectService();
   
   bool _isEditing = false;
   bool _isLoading = false;
   bool _isIncomeTransaction = true;
-  bool _isProjectRelated = false;
   
   DateTime _transactionDate = DateTime.now();
-  String? _selectedBudgetId;
   String? _selectedProjectId;
   String? _selectedPhaseId;
   String? _selectedTaskId;
   String _selectedCategory = 'Autre';
   String? _selectedSubcategory;
   
-  List<Budget> _budgets = [];
   List<Project> _projects = [];
   List<Phase> _phases = [];
   List<Task> _tasks = [];
   final Map<String, List<String>> _categories = {
-    'Entrée': ['Don', 'Virement','Vente de livres','Cours en ligne', 'Cagnotte en ligne', 'Waqf','Remboursement', 'Dotation', 'Subvention', 'Autre'],
+    'Don Joumoua': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Événement caritatif', 'Autre'],
+    'Don': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Événement caritatif', 'Autre'],
+    'Don Tarawih': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Collecte spéciale', 'Autre'],
+    'Don Ramadan': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Zakat Al-Fitr', 'Autre'],
+    'Don Aïd': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Qurbani', 'Autre'],
+    'Virement': ['Mensuel', 'Ponctuel', 'International', 'Interne', 'Autre'],
+    'Vente de livres': ['Religieux', 'Éducatifs', 'Culturels', 'Numériques', 'Autre'],
+    'Cours en ligne': ['Formation Tajwid', 'Formation Fikh', 'Webinaire', 'Atelier virtuel', 'Autre'],
+    'Cagnotte en ligne': ['Projet spécifique', 'Urgence', 'Événement', 'Campagne annuelle', 'Autre'],
+    'Waqf': ['Immobilier', 'Mobilier', 'Financier', 'Autre'],
+    'Remboursement': ['Avance', 'Trop-perçu', 'Assurance', 'Fournisseur', 'Autre'],
+    'Dotation': ['Fondation', 'Institution', 'Gouvernementale', 'Autre'],
+    'Subvention': ['Publique', 'Privée', 'Européenne', 'Locale', 'Nationale', 'Autre'],
     'Construction': ['Terrassement', 'Fondations', 'Gros œuvre', 'Second œuvre', 'Toiture', 'Façades', 'Aménagements extérieurs', 'Équipements techniques', 'Finitions', 'Mobilier', 'Honoraires architecte', 'Études techniques', 'Permis et autorisations', 'Autre'],
     'Éducatif': ['Matériel pédagogique', 'Bibliothèque', 'Équipement multimédia', 'Fournitures scolaires', 'Livres religieux', 'Formation enseignants', 'Activités parascolaires', 'Autre'],
     'Ressources': ['Matériel', 'Licences logicielles', 'Formation', 'Services externes', 'Équipements spécialisés', 'Autre'],
@@ -67,52 +75,37 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     'Autre': ['Divers'],
   };
   List<String> _subcategories = [];
-  List<String> _entriesCategories = ['Entrée'];
+  List<String> _entriesCategories = ['Don', 'Don Joumoua', 'Don Tarawih', 'Don Ramadan', 'Don Aïd', 'Virement', 'Vente de livres', 'Cours en ligne', 'Cagnotte en ligne', 'Waqf', 'Remboursement', 'Dotation', 'Subvention'];
   List<String> _expensesCategories = ['Construction', 'Éducatif', 'Ressources', 'Personnel', 'Marketing', 'Opérations', 'Finance', 'Autre'];
 
   @override
   void initState() {
     super.initState();
-    _initFormData();
-    _loadBudgetsAndProjects();
-  }
 
-  Future<void> _initFormData() async {
-    if (widget.transaction != null) {
-      _isEditing = true;
+    _isEditing = widget.transaction != null;
+    
+    if (_isEditing) {
       _descriptionController.text = widget.transaction!.description;
       _amountController.text = widget.transaction!.amount.abs().toString();
-      _isIncomeTransaction = widget.transaction!.amount > 0;
+      _isIncomeTransaction = widget.transaction!.transactionType == 'income';
       _transactionDate = widget.transaction!.transactionDate;
-      _selectedBudgetId = widget.transaction!.budgetId;
       _selectedProjectId = widget.transaction!.projectId;
       _selectedPhaseId = widget.transaction!.phaseId;
       _selectedTaskId = widget.transaction!.taskId;
-      _isProjectRelated = widget.transaction!.projectId != null;
       
-      // Convertir les catégories de la base de données en catégories d'affichage
-      if (widget.transaction!.category == 'income') {
-        _selectedCategory = 'Entrée';
-      } else if (widget.transaction!.category == 'expense') {
-        // Utiliser une catégorie de dépense par défaut si aucune sous-catégorie n'est spécifiée
-        _selectedCategory = widget.transaction!.subcategory != null 
-            ? _getCategoryForSubcategory(widget.transaction!.subcategory!) 
-            : 'Ressources';
-      } else {
-        _selectedCategory = widget.transaction!.category;
-      }
-      
+      // Définir la catégorie à partir du modèle mis à jour
+      _selectedCategory = widget.transaction!.category;
       _selectedSubcategory = widget.transaction!.subcategory;
       
       // Initialiser les sous-catégories en fonction de la catégorie sélectionnée
       _updateSubcategories(_selectedCategory);
     } else {
-      _selectedBudgetId = widget.budgetId;
-      _selectedProjectId = widget.projectId;
+      _selectedProjectId = widget.initialProjectId ?? widget.projectId;
       _selectedPhaseId = widget.phaseId;
       _selectedTaskId = widget.taskId;
-      _updateSubcategories(_isIncomeTransaction ? 'Entrée' : 'Ressources');
+      _updateSubcategories(_isIncomeTransaction ? 'Don' : 'Ressources');
     }
+    _loadProjects();
   }
 
   // Méthode pour trouver la catégorie principale correspondant à une sous-catégorie
@@ -125,41 +118,29 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     return 'Autre';
   }
 
-  Future<void> _loadBudgetsAndProjects() async {
+  Future<void> _loadProjects() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final budgets = await _budgetService.getAllBudgets();
-      print('Budgets récupérés: ${budgets.length}');
-      
-      // Afficher les IDs et noms des budgets pour déboguer
-      for (var budget in budgets) {
-        print('Budget trouvé: ${budget.id} - ${budget.name} - créé par: ${budget.createdBy}');
-      }
-      
       final projects = await _projectService.getAllProjects();
       print('Projets récupérés: ${projects.length}');
+      
+      // Afficher les IDs et noms des projets pour déboguer
+      for (var project in projects) {
+        print('Projet trouvé: ${project.id} - ${project.name} - créé par: ${project.createdBy}');
+      }
       
       final phases = await _projectService.getAllPhases();
       final tasks = await _projectService.getAllTasks();
       
       setState(() {
-        _budgets = budgets;
         _projects = projects;
         _phases = phases;
         _tasks = tasks;
         _isLoading = false;
       });
-      
-      // Vérifier si _selectedBudgetId est dans la liste des budgets
-      if (_selectedBudgetId != null) {
-        bool budgetExists = _budgets.any((b) => b.id == _selectedBudgetId);
-        print('Budget sélectionné (${_selectedBudgetId}) existe dans la liste: $budgetExists');
-      } else {
-        print('Aucun budget sélectionné');
-      }
     } catch (e) {
       print('Erreur lors du chargement des données: ${e.toString()}');
       SnackBarHelper.showErrorSnackBar(
@@ -205,17 +186,17 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
           final updatedTransaction = widget.transaction!.copyWith(
             description: description,
             amount: amount,
-            category: _selectedCategory == 'Entrée' ? 'income' : _selectedCategory,
+            transactionType: _isIncomeTransaction ? 'income' : 'expense',
+            category: _selectedCategory,
             subcategory: _selectedSubcategory,
-            budgetId: _selectedBudgetId,
-            projectId: _isProjectRelated ? _selectedProjectId : null,
-            phaseId: _isProjectRelated ? _selectedPhaseId : null,
-            taskId: _isProjectRelated ? _selectedTaskId : null,
+            projectId: _selectedProjectId,
+            phaseId: _selectedPhaseId,
+            taskId: _selectedTaskId,
             transactionDate: _transactionDate,
             updatedAt: DateTime.now(),
           );
           
-          await _budgetService.updateTransaction(updatedTransaction);
+          await _projectFinanceService.updateTransaction(updatedTransaction);
           
           if (!mounted) return;
           SnackBarHelper.showSuccessSnackBar(
@@ -225,15 +206,14 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
           Navigator.pop(context, updatedTransaction);
         } else {
           // Créer une nouvelle transaction
-          final newTransaction = await _budgetService.createTransaction(
-            _selectedBudgetId!,
-            _isProjectRelated ? _selectedProjectId : null,
-            _isProjectRelated ? _selectedPhaseId : null,
-            _isProjectRelated ? _selectedTaskId : null,
+          final newTransaction = await _projectFinanceService.createTransaction(
+            _selectedProjectId!,
+            _selectedPhaseId,
+            _selectedTaskId,
             amount,
             description,
             _transactionDate,
-            _selectedCategory == 'Entrée' ? 'income' : _selectedCategory,
+            _selectedCategory,
             _selectedSubcategory,
           );
           
@@ -298,7 +278,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Type de transaction (entrée/sortie)
+                    // Type de transaction (Entrée/sortie)
                     Row(
                       children: [
                         Expanded(
@@ -310,7 +290,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               setState(() {
                                 _isIncomeTransaction = value!;
                                 // Mettre à jour les catégories disponibles
-                                _updateSubcategories(_isIncomeTransaction ? 'Entrée' : 'Ressources');
+                                _updateSubcategories(_isIncomeTransaction ? 'Don' : 'Ressources');
                               });
                             },
                             activeColor: Colors.green,
@@ -325,7 +305,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               setState(() {
                                 _isIncomeTransaction = value!;
                                 // Mettre à jour les catégories disponibles
-                                _updateSubcategories(_isIncomeTransaction ? 'Entrée' : 'Ressources');
+                                _updateSubcategories(_isIncomeTransaction ? 'Don' : 'Ressources');
                               });
                             },
                             activeColor: Colors.red,
@@ -458,94 +438,37 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Budget
+                    // Projet
                     DropdownButtonFormField<String>(
                       decoration: const InputDecoration(
-                        labelText: 'Budget',
+                        labelText: 'Projet',
                         border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.account_balance_wallet),
+                        prefixIcon: Icon(Icons.business),
                       ),
-                      value: _selectedBudgetId,
-                      items: _budgets.isEmpty 
-                          ? [const DropdownMenuItem<String>(
-                              value: '',
-                              child: Text('Aucun budget disponible'),
-                            )]
-                          : _budgets.map((budget) {
-                              return DropdownMenuItem<String>(
-                                value: budget.id,
-                                child: Text('${budget.name} (${budget.id.substring(0, 4)}...)'),
-                              );
-                            }).toList(),
+                      value: _selectedProjectId,
+                      items: _projects.map((project) {
+                        return DropdownMenuItem<String>(
+                          value: project.id,
+                          child: Text(project.name),
+                        );
+                      }).toList(),
                       onChanged: (value) {
-                        print('Budget sélectionné: $value');
                         setState(() {
-                          _selectedBudgetId = value;
+                          _selectedProjectId = value;
+                          _selectedPhaseId = null;
+                          _selectedTaskId = null;
                         });
                       },
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Veuillez sélectionner un budget';
+                          return 'Veuillez sélectionner un projet';
                         }
                         return null;
                       },
-                      // Assurez-vous que le dropdown n'est jamais désactivé
-                      disabledHint: const Text('Chargement des budgets...'),
-                      isDense: true,
-                      isExpanded: true,
                     ),
                     const SizedBox(height: 16),
-                    // Lié à un projet?
-                    SwitchListTile(
-                      title: const Text('Transaction liée à un projet'),
-                      value: _isProjectRelated,
-                      onChanged: (value) {
-                        setState(() {
-                          _isProjectRelated = value;
-                          if (!value) {
-                            _selectedProjectId = null;
-                            _selectedPhaseId = null;
-                            _selectedTaskId = null;
-                          } else if (_projects.isNotEmpty && _selectedProjectId == null) {
-                            _selectedProjectId = _projects.first.id;
-                          }
-                        });
-                      },
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: 16),
-                    // Projet (si lié à un projet)
-                    if (_isProjectRelated)
-                      DropdownButtonFormField<String>(
-                        decoration: const InputDecoration(
-                          labelText: 'Projet',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.business),
-                        ),
-                        value: _selectedProjectId,
-                        items: _projects.map((project) {
-                          return DropdownMenuItem<String>(
-                            value: project.id,
-                            child: Text(project.name),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedProjectId = value;
-                            _selectedPhaseId = null;
-                            _selectedTaskId = null;
-                          });
-                        },
-                        validator: (value) {
-                          if (_isProjectRelated && (value == null || value.isEmpty)) {
-                            return 'Veuillez sélectionner un projet';
-                          }
-                          return null;
-                        },
-                      ),
-                    const SizedBox(height: 16),
-                    // Phase (si lié à un projet)
-                    if (_isProjectRelated && _selectedProjectId != null)
+                    // Phase
+                    if (_selectedProjectId != null)
                       DropdownButtonFormField<String>(
                         decoration: const InputDecoration(
                           labelText: 'Phase',
@@ -566,15 +489,15 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                           });
                         },
                         validator: (value) {
-                          if (_isProjectRelated && _selectedProjectId != null && (value == null || value.isEmpty)) {
+                          if (_selectedProjectId != null && (value == null || value.isEmpty)) {
                             return 'Veuillez sélectionner une phase';
                           }
                           return null;
                         },
                       ),
                     const SizedBox(height: 16),
-                    // Tâche (si lié à un projet)
-                    if (_isProjectRelated && _selectedProjectId != null && _selectedPhaseId != null)
+                    // Tâche
+                    if (_selectedProjectId != null && _selectedPhaseId != null)
                       DropdownButtonFormField<String>(
                         decoration: const InputDecoration(
                           labelText: 'Tâche',
@@ -594,7 +517,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                           });
                         },
                         validator: (value) {
-                          if (_isProjectRelated && _selectedProjectId != null && _selectedPhaseId != null && (value == null || value.isEmpty)) {
+                          if (_selectedProjectId != null && _selectedPhaseId != null && (value == null || value.isEmpty)) {
                             return 'Veuillez sélectionner une tâche';
                           }
                           return null;
@@ -641,7 +564,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                                           _isLoading = true;
                                         });
                                         try {
-                                          await _budgetService.deleteTransaction(widget.transaction!.id);
+                                          await _projectFinanceService.deleteTransaction(widget.transaction!.id);
                                           if (!mounted) return;
                                           SnackBarHelper.showSuccessSnackBar(
                                             context, 

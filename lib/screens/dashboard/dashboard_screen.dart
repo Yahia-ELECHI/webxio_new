@@ -4,15 +4,22 @@ import '../../models/project_model.dart';
 import '../../models/phase_model.dart';
 import '../../models/budget_model.dart';
 import '../../models/budget_transaction_model.dart';
+import '../../models/project_transaction_model.dart';
+import '../../models/task_history_model.dart';
 import '../../services/task_service.dart';
-import '../../services/project_service.dart';
+import '../../services/project_service/project_service.dart';
 import '../../services/phase_service.dart';
 import '../../services/budget_service.dart';
+import '../../services/user_service.dart';
+import '../../services/project_finance_service.dart';
 import '../../main.dart'; // Import pour utiliser MainAppScreen
 import 'models/dashboard_chart_models.dart';
 import 'sections/tasks_projects_section.dart';
-import 'sections/budget_finance_section.dart';
 import 'sections/phases_section.dart';
+import 'sections/task_history_section.dart';
+import 'widgets/cagnotte_webview.dart';
+import 'widgets/modern_project_selector.dart';
+import '../tasks/task_detail_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -26,15 +33,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final ProjectService _projectService = ProjectService();
   final PhaseService _phaseService = PhaseService();
   final BudgetService _budgetService = BudgetService();
+  final UserService _userService = UserService();
+  final ProjectFinanceService _projectFinanceService = ProjectFinanceService();
   
   bool _isLoading = true;
+  
+  // Sélection par projet
+  String? _selectedProjectId;
+  bool _showAllProjects = true; // Afficher tous les projets par défaut
+  
+  // Obtenir le nom du projet sélectionné
+  String get _selectedProjectName {
+    if (_selectedProjectId == null || _projectsList.isEmpty) {
+      return "";
+    }
+    
+    final project = _projectsList.firstWhere(
+      (p) => p.id == _selectedProjectId,
+      orElse: () => Project(
+        id: "",
+        name: "Projet inconnu",
+        description: "",
+        status: "active",
+        createdBy: "",
+        createdAt: DateTime.now(),
+      ),
+    );
+    
+    return project.name;
+  }
   
   // Données brutes
   List<Task> _tasksList = [];
   List<Project> _projectsList = [];
   List<Phase> _phasesList = [];
   List<Budget> _budgetsList = [];
-  List<BudgetTransaction> _transactionsList = [];
+  List<BudgetTransaction> _budgetTransactionsList = [];
+  List<ProjectTransaction> _projectTransactionsList = [];
+  List<TaskHistory> _taskHistoryList = [];
+  Map<String, String> _userDisplayNames = {};
+  Map<String, Task> _tasksMap = {};
 
   // Données pour les graphiques
   List<TaskDistributionData> _tasksByStatusData = [];
@@ -57,47 +95,92 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
     
     try {
-      // Chargement des projets, tâches et phases
-      _projectsList = await _projectService.getProjects();
-      _tasksList = await _taskService.getAllTasks();
-      _phasesList = await _phaseService.getAllPhases();
-      _budgetsList = await _budgetService.getBudgets();
-      _transactionsList = await _budgetService.getRecentTransactions(10);
+      // Chargement des projets
+      _projectsList = await _projectService.getAllProjects();
       
-      // Charger les données budgétaires pour chaque projet
-      for (var i = 0; i < _projectsList.length; i++) {
-        final projectTransactions = await _budgetService.getTransactionsByProject(_projectsList[i].id);
+      // Chargement des données selon le projet sélectionné ou tous les projets
+      if (!_showAllProjects && _selectedProjectId != null) {
         
-        double allocated = 0;
-        double consumed = 0;
+        // Charger les tâches du projet sélectionné
+        _tasksList = await _taskService.getTasksByProject(_selectedProjectId!);
         
-        // Calculer l'allocation à partir des transactions positives
-        final allocations = projectTransactions.where((t) => t.amount > 0);
-        if (allocations.isNotEmpty) {
-          allocated = allocations.fold(0, (sum, t) => sum + t.amount);
+        // Charger les phases du projet sélectionné
+        _phasesList = await _phaseService.getPhasesByProject(_selectedProjectId!);
+        
+        // Charger les données budgétaires du projet sélectionné
+        _budgetsList = await _budgetService.getProjectBudgets(_selectedProjectId!);
+        _budgetTransactionsList = await _budgetService.getRecentTransactions(10);
+        
+        // En mode projet spécifique, récupérer uniquement les transactions du projet
+        _projectTransactionsList = await _projectFinanceService.getProjectTransactions(_selectedProjectId!);
+        
+        // Charger l'historique des tâches pour le projet sélectionné
+        final allTasksInProject = await _taskService.getTasksByProject(_selectedProjectId!);
+        _tasksMap = {for (var task in allTasksInProject) task.id: task};
+        
+        // On récupère l'historique pour chaque tâche du projet
+        _taskHistoryList = [];
+        for (var task in allTasksInProject) {
+          final history = await _projectService.getTaskHistory(task.id);
+          _taskHistoryList.addAll(history);
         }
         
-        // Calculer la consommation à partir des transactions négatives
-        final expenses = projectTransactions.where((t) => t.amount < 0);
-        if (expenses.isNotEmpty) {
-          consumed = expenses.fold(0, (sum, t) => sum + t.amount.abs());
+        // Limiter à 50 entrées d'historique les plus récentes
+        _taskHistoryList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        if (_taskHistoryList.length > 50) {
+          _taskHistoryList = _taskHistoryList.sublist(0, 50);
+        }
+      } else {
+        // Charger toutes les données
+        _tasksList = await _taskService.getAllTasks();
+        _phasesList = await _phaseService.getAllPhases();
+        _budgetsList = await _budgetService.getBudgets();
+        _budgetTransactionsList = await _budgetService.getRecentTransactions(10);
+        
+        // Charger toutes les transactions accessibles par l'utilisateur
+        _projectTransactionsList = await _projectFinanceService.getAllProjectTransactions();
+        
+        // Créer un mapping des tâches
+        _tasksMap = {for (var task in _tasksList) task.id: task};
+        
+        // Charger l'historique des tâches récentes (limité à 50)
+        _taskHistoryList = [];
+        // On récupère les 10 tâches les plus récentes pour limiter le volume de données
+        final recentTasks = List<Task>.from(_tasksList)
+          ..sort((a, b) => b.updatedAt?.compareTo(a.updatedAt ?? a.createdAt) ?? 
+                            b.createdAt.compareTo(a.createdAt));
+        final tasksToFetch = recentTasks.take(20).toList();
+        
+        for (var task in tasksToFetch) {
+          final history = await _projectService.getTaskHistory(task.id);
+          _taskHistoryList.addAll(history);
         }
         
-        // Mettre à jour le projet avec les valeurs calculées
-        _projectsList[i] = _projectsList[i].copyWith(
-          budgetAllocated: allocated > 0 ? allocated : _projectsList[i].budgetAllocated,
-          budgetConsumed: consumed > 0 ? consumed : _projectsList[i].budgetConsumed,
-        );
+        // Limiter à 50 entrées d'historique les plus récentes
+        _taskHistoryList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        if (_taskHistoryList.length > 50) {
+          _taskHistoryList = _taskHistoryList.sublist(0, 50);
+        }
       }
       
-      // Transformation des données pour les graphiques
+      // Préparation des données pour les charts et widgets
       _prepareTasksByStatusData(_tasksList);
       _prepareTasksByPriorityData(_tasksList);
       _prepareProjectProgressData(_projectsList, _phasesList, _tasksList);
       _prepareUpcomingTasksData(_tasksList);
-      _prepareBudgetOverviewData(_projectsList);
-      _prepareRecentTransactionsData(_transactionsList);
       _preparePhaseProgressData(_phasesList, _tasksList);
+      _prepareBudgetOverviewData(_projectsList);
+      _prepareRecentTransactionsData(_projectTransactionsList);
+      
+      // Chargement des noms d'utilisateurs
+      final userIds = <String>{};
+      for (var history in _taskHistoryList) {
+        userIds.add(history.userId);
+      }
+      
+      if (userIds.isNotEmpty) {
+        _userDisplayNames = await _userService.getUsersDisplayNames(userIds.toList());
+      }
       
     } catch (e) {
       print('Erreur lors du chargement des données: $e');
@@ -155,6 +238,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   
   void _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks) {
     _projectProgressData = projects.map((project) {
+      
       // Calcul du pourcentage de progression
       final projectPhases = phases.where((phase) => phase.projectId == project.id).toList();
       final projectTasks = tasks.where((task) => task.projectId == project.id).toList();
@@ -168,11 +252,59 @@ class _DashboardScreenState extends State<DashboardScreen> {
         progressPercentage = (completedTasks / projectTasks.length) * 100;
       }
       
+      // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
+      double budgetUsagePercentage = 0;
+      
+      if (_projectTransactionsList.isNotEmpty) {
+        final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
+        
+        // Si on a trouvé des transactions pour ce projet, calculer le pourcentage d'utilisation
+        if (projectTransactions.isNotEmpty) {
+          // Calculer les dépenses (expenses)
+          double usedBudget = projectTransactions
+              .where((tx) => !tx.isIncome)
+              .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+          
+          // Calculer les revenus (income)
+          double totalRevenues = projectTransactions
+              .where((tx) => tx.isIncome)
+              .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+          
+          // Si nous avons des revenus, calculer le pourcentage par rapport aux revenus
+          if (totalRevenues > 0) {
+            budgetUsagePercentage = (usedBudget / totalRevenues) * 100;
+          } else if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
+            // Sinon, utiliser le budget alloué comme référence si disponible
+            budgetUsagePercentage = (usedBudget / project.budgetAllocated!) * 100;
+          } else {
+            // Si pas de revenus et pas de budget alloué, montrer le pourcentage en fonction des dépenses
+            budgetUsagePercentage = usedBudget > 0 ? 100 : 0; // Si des dépenses existent sans revenus ni budget, 100%
+          }
+          budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
+        } else {
+          // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
+          budgetUsagePercentage = project.budgetUsagePercentage;
+        }
+      } else {
+        // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
+        budgetUsagePercentage = project.budgetUsagePercentage;
+      }
+      
+      // Déterminer la couleur en fonction du pourcentage d'utilisation
+      Color budgetStatusColor;
+      if (budgetUsagePercentage < 50) {
+        budgetStatusColor = Colors.green; // Moins de 50% du budget utilisé : vert
+      } else if (budgetUsagePercentage < 75) {
+        budgetStatusColor = Colors.orange; // Entre 50% et 75% : orange
+      } else {
+        budgetStatusColor = Colors.red; // Plus de 75% : rouge
+      }
+      
       return ProjectProgressData(
         projectName: project.name,
         projectId: project.id,
         progressPercentage: progressPercentage,
-        budgetUsagePercentage: project.budgetUsagePercentage,
+        budgetUsagePercentage: budgetUsagePercentage,
         progressColor: _getProgressColor(progressPercentage),
       );
     }).toList();
@@ -205,6 +337,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   
   void _preparePhaseProgressData(List<Phase> phases, List<Task> tasks) {
     _phaseProgressData = phases.map((phase) {
+      
       // Calcul du pourcentage de progression
       final phaseTasks = tasks.where((task) => task.phaseId == phase.id).toList();
       
@@ -217,6 +350,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
         progressPercentage = (completedTasks / phaseTasks.length) * 100;
       }
       
+      // Calcul des informations budgétaires
+      double? budgetAllocated = phase.budgetAllocated;
+      double? budgetConsumed = phase.budgetConsumed;
+      double? budgetUsagePercentage;
+      Color? budgetStatusColor;
+      
+      // Si des infos budgétaires sont disponibles, calculer le pourcentage d'utilisation
+      if (budgetAllocated != null && budgetAllocated > 0) {
+        if (budgetConsumed != null) {
+          budgetUsagePercentage = (budgetConsumed / budgetAllocated) * 100;
+          
+          // Déterminer la couleur en fonction du pourcentage d'utilisation
+          if (budgetUsagePercentage < 50) {
+            budgetStatusColor = Colors.green; // Moins de 50% du budget utilisé : vert
+          } else if (budgetUsagePercentage < 75) {
+            budgetStatusColor = Colors.orange; // Entre 50% et 75% : orange
+          } else {
+            budgetStatusColor = Colors.red; // Plus de 75% : rouge
+          }
+        }
+      } else {
+        // Essayer de calculer à partir des transactions si disponibles
+        final phaseTransactions = _projectTransactionsList.where((tx) => tx.phaseId == phase.id).toList();
+        
+        if (phaseTransactions.isNotEmpty) {
+          // Calculer le budget alloué à partir des transactions de revenu (income)
+          double allocatedFromTransactions = phaseTransactions
+              .where((tx) => tx.isIncome)
+              .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+          
+          // Calculer le budget consommé à partir des transactions de dépense (expense)
+          double consumedFromTransactions = phaseTransactions
+              .where((tx) => !tx.isIncome)
+              .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+          
+          if (allocatedFromTransactions > 0) {
+            budgetAllocated = allocatedFromTransactions;
+            budgetConsumed = consumedFromTransactions;
+            budgetUsagePercentage = (consumedFromTransactions / allocatedFromTransactions) * 100;
+            
+            // Déterminer la couleur en fonction du pourcentage d'utilisation
+            if (budgetUsagePercentage < 50) {
+              budgetStatusColor = Colors.green; // Moins de 50% du budget utilisé : vert
+            } else if (budgetUsagePercentage < 75) {
+              budgetStatusColor = Colors.orange; // Entre 50% et 75% : orange
+            } else {
+              budgetStatusColor = Colors.red; // Plus de 75% : rouge
+            }
+          }
+        }
+      }
+      
       return PhaseProgressData(
         phaseId: phase.id,
         phaseName: phase.name,
@@ -225,34 +410,100 @@ class _DashboardScreenState extends State<DashboardScreen> {
         progressPercentage: progressPercentage,
         status: phase.status,
         statusColor: _getPhaseStatusColor(phase.status),
+        budgetAllocated: budgetAllocated,
+        budgetConsumed: budgetConsumed,
+        budgetUsagePercentage: budgetUsagePercentage,
+        budgetStatusColor: budgetStatusColor,
       );
     }).toList();
   }
   
   void _prepareBudgetOverviewData(List<Project> projects) {
-    _budgetOverviewData = projects
-      .where((project) => project.budgetAllocated != null && project.budgetAllocated! > 0)
+    
+    // Filtrer les projets avec un budget alloué ou des transactions
+    List<Project> relevantProjects = projects.where((project) {
+      // Vérifier si le projet a un budget alloué
+      bool hasBudget = project.budgetAllocated != null && project.budgetAllocated! > 0;
+      
+      // Vérifier si le projet a des transactions
+      bool hasTransactions = _projectTransactionsList.any((tx) => tx.projectId == project.id);
+      
+      // Inclure le projet s'il a un budget ou des transactions
+      return hasBudget || hasTransactions;
+    }).toList();
+    
+    _budgetOverviewData = relevantProjects
       .map((project) {
-        final budgetUsagePercentage = project.budgetUsagePercentage;
+        
+        // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
+        double usedBudget = 0;
+        double budgetUsagePercentage = 0;
+        
+        if (_projectTransactionsList.isNotEmpty) {
+          final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
+          
+          // Si on a trouvé des transactions pour ce projet, calculer le montant utilisé
+          if (projectTransactions.isNotEmpty) {
+            // Calculer les dépenses (expenses)
+            usedBudget = projectTransactions
+                .where((tx) => !tx.isIncome)
+                .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+            
+            // Calculer les revenus (income)
+            double totalRevenues = projectTransactions
+                .where((tx) => tx.isIncome)
+                .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+            
+            // Si nous avons des revenus, calculer le pourcentage par rapport aux revenus
+            if (totalRevenues > 0) {
+              budgetUsagePercentage = (usedBudget / totalRevenues) * 100;
+            } else if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
+              // Sinon, utiliser le budget alloué comme référence si disponible
+              budgetUsagePercentage = (usedBudget / project.budgetAllocated!) * 100;
+            } else {
+              // Si pas de revenus et pas de budget alloué, montrer le pourcentage en fonction des dépenses
+              budgetUsagePercentage = usedBudget > 0 ? 100 : 0; // Si des dépenses existent sans revenus ni budget, 100%
+            }
+            budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
+          } else {
+            // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
+            usedBudget = project.budgetConsumed ?? 0;
+            budgetUsagePercentage = project.budgetUsagePercentage;
+          }
+        } else {
+          // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
+          usedBudget = project.budgetConsumed ?? 0;
+          budgetUsagePercentage = project.budgetUsagePercentage;
+        }
+        
+        // Déterminer la couleur en fonction du pourcentage d'utilisation
+        Color budgetColor;
+        if (budgetUsagePercentage < 50) {
+          budgetColor = Colors.green; // Moins de 50% du budget utilisé : vert
+        } else if (budgetUsagePercentage < 75) {
+          budgetColor = Colors.orange; // Entre 50% et 75% : orange
+        } else {
+          budgetColor = Colors.red; // Plus de 75% : rouge
+        }
         
         return BudgetOverviewData(
           projectName: project.name,
           projectId: project.id,
           allocatedBudget: project.budgetAllocated ?? 0,
-          usedBudget: project.budgetConsumed ?? 0,
-          color: _getBudgetColor(budgetUsagePercentage),
+          usedBudget: usedBudget,
+          color: budgetColor,
         );
       }).toList();
   }
   
-  void _prepareRecentTransactionsData(List<BudgetTransaction> transactions) {
+  void _prepareRecentTransactionsData(List<ProjectTransaction> transactions) {
     _recentTransactionsData = transactions.map((transaction) {
       return RecentTransactionData(
         id: transaction.id,
         description: transaction.description,
         amount: transaction.amount,
         date: transaction.transactionDate,
-        category: transaction.category,
+        category: transaction.category ?? (transaction.amount > 0 ? 'income' : 'expense'),
         isIncome: transaction.amount > 0,
       );
     }).toList();
@@ -272,7 +523,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'terminée':
       case 'completed':
         return Colors.green;
-      case 'en attente':
+      case 'en revision':
       case 'review':
         return Colors.orange;
       case 'annulée':
@@ -324,12 +575,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
   
   Color _getBudgetColor(double percentage) {
-    if (percentage < 70) {
-      return Colors.green;
-    } else if (percentage < 90) {
-      return Colors.orange;
+    if (percentage < 50) {
+      return Colors.green; // Moins de 50% du budget utilisé : vert
+    } else if (percentage < 75) {
+      return Colors.orange; // Entre 50% et 75% : orange
     } else {
-      return Colors.red;
+      return Colors.red; // Plus de 75% : rouge
     }
   }
   
@@ -389,11 +640,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _navigateToTaskDetails(String taskId) {
-    Navigator.pushNamed(
-      context,
-      '/task-details',
-      arguments: taskId,
-    ).then((_) => _loadDashboardData());
+    final task = _tasksMap[taskId];
+    if (task != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => TaskDetailScreen(
+            task: task,
+            onTaskUpdated: (updatedTask) {
+              // Mettre à jour la tâche dans la liste
+              setState(() {
+                final index = _tasksList.indexWhere((t) => t.id == updatedTask.id);
+                if (index >= 0) {
+                  _tasksList[index] = updatedTask;
+                  _tasksMap[updatedTask.id] = updatedTask;
+                }
+                // Recharger les données du dashboard
+                _loadDashboardData();
+              });
+            },
+          ),
+        ),
+      );
+    }
   }
 
   void _navigateToPhaseDetails(String phaseId) {
@@ -460,6 +729,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  void _showProjectSelector() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: ModernProjectSelector(
+              projects: _projectsList,
+              selectedProjectId: _selectedProjectId,
+              showAllProjects: _showAllProjects,
+              onProjectSelected: (projectId, showAll) {
+                setState(() {
+                  _showAllProjects = showAll;
+                  _selectedProjectId = projectId;
+                });
+                _loadDashboardData();
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -479,16 +780,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // Section des tâches et projets
                     SizedBox(
-                      height: 598, // Hauteur ajustée
+                      height: 730, 
                       child: TasksProjectsSection(
                         tasksByStatusData: _tasksByStatusData,
                         tasksByPriorityData: _tasksByPriorityData,
                         projectProgressData: _projectProgressData,
                         upcomingTasksData: _upcomingTasksData,
-                        onProjectTap: _navigateToProjectDetails,
-                        onTaskTap: _navigateToTaskDetails,
                         onSeeAllProjects: _navigateToProjectsList,
                         onSeeAllTasks: _navigateToTasksList,
+                        onProjectTap: _navigateToProjectDetails,
+                        onTaskTap: _navigateToTaskDetails,
                       ),
                     ),
                     
@@ -496,7 +797,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // Section des phases
                     SizedBox(
-                      height: 300, // Hauteur ajustée
+                      height: 350, 
                       child: PhasesSection(
                         phaseProgressData: _phaseProgressData,
                         onSeeAllPhases: _navigateToPhasesList,
@@ -508,12 +809,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     
                     // Section budget et finances
                     SizedBox(
-                      height: 1200, // Hauteur augmentée pour la section budget
-                      child: BudgetFinanceSection(
-                        recentTransactionsData: _recentTransactionsData,
-                        onSeeAllBudget: _navigateToBudgetScreen,
-                        onSeeAllTransactions: _navigateToTransactions,
-                        onProjectTap: _navigateToProjectDetails,
+                      height: 600, 
+                      child: CagnotteWebView(
+                        title: 'Cagnotte en ligne',
+                        onSeeAllPressed: _navigateToBudgetScreen,
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 24),
+                    
+                    // Section historique des tâches
+                    SizedBox(
+                      height: 400,
+                      child: TaskHistorySection(
+                        taskHistoryData: _taskHistoryList,
+                        userDisplayNames: _userDisplayNames,
+                        tasksMap: _tasksMap,
+                        onSeeAllHistory: null, // Ajoutez une fonction si besoin d'avoir un écran dédié
+                        onTaskTap: _navigateToTaskDetails,
                       ),
                     ),
                     
@@ -540,20 +853,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '$greeting !',
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '$greeting !',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            // Bouton de sélection de projet
+            if (_projectsList.isNotEmpty)
+              ProjectSelectorButton(
+                onPressed: _showProjectSelector,
+                showAllProjects: _showAllProjects,
+                projectName: _selectedProjectName,
+              ),
+          ],
         ),
         const SizedBox(height: 8),
-        Text(
-          'Bienvenue sur votre tableau de bord',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.grey[600],
-          ),
+        Row(
+          children: [
+            Text(
+              'Bienvenue sur votre tableau de bord',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+            if (!_showAllProjects && _selectedProjectId != null)
+              Expanded(
+                child: Text(
+                  ' - ${_selectedProjectName}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue[700],
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
         ),
       ],
     );
@@ -567,10 +908,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ).length;
     
     // Calculer le nombre de phases en cours
-    final int inProgressPhases = _phasesList.where((phase) => 
-      phase.status.toLowerCase() == 'en cours' || 
-      phase.status.toLowerCase() == 'in progress' ||
-      phase.status.toLowerCase() == 'in_progress'
+    final int inProgressPhases = _phasesList.where((phase) =>     
+      phase.status.toLowerCase() == 'completed' ||
+      phase.status.toLowerCase() == 'terminée'
     ).length;
     
     return GridView(
@@ -598,10 +938,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           onTap: _navigateToTasksList,
         ),
         _buildSummaryCard(
-          title: 'Phases en cours',
-          value: inProgressPhases.toString(),
-          icon: Icons.timeline,
-          color: Colors.orange,
+          title: 'Phases terminées',
+          value: '$inProgressPhases/${_phasesList.length}',
+          icon: Icons.checklist_rounded,
+          color: Colors.green,
           onTap: _navigateToPhasesList,
         ),
       ],
@@ -650,6 +990,20 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Récupérer la largeur de l'écran pour adapter la taille des éléments
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isSmallScreen = screenWidth < 400;
+    final bool isMediumScreen = screenWidth >= 400 && screenWidth < 600;
+    
+    // Adapter la taille des éléments en fonction de la taille de l'écran
+    final double iconSize = isSmallScreen ? 16 : 20;
+    final double containerSize = isSmallScreen ? 32 : 40;
+    final double fontSize = isSmallScreen ? 11 : (isMediumScreen ? 12 : 15);
+    final double titleFontSize = isSmallScreen ? 10 : (isMediumScreen ? 11 : 12);
+    final EdgeInsets padding = isSmallScreen 
+        ? const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0)
+        : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0);
+    
     return GestureDetector(
       onTapDown: (_) => setState(() => _isPressed = true),
       onTapUp: (_) => setState(() => _isPressed = false),
@@ -665,12 +1019,12 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
           child: Stack(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                padding: padding,
                 child: Row(
                   children: [
                     Container(
-                      width: 40,
-                      height: 40,
+                      width: containerSize,
+                      height: containerSize,
                       decoration: BoxDecoration(
                         color: widget.color.withOpacity(0.2),
                         shape: BoxShape.circle,
@@ -678,10 +1032,10 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                       child: Icon(
                         widget.icon,
                         color: widget.color,
-                        size: 20,
+                        size: iconSize,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: isSmallScreen ? 8 : 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -690,9 +1044,9 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                           const SizedBox(height: 4),
                           Text(
                             widget.value,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 15,
+                              fontSize: fontSize,
                             ),
                           ),
                         ],
@@ -702,13 +1056,13 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                 ),
               ),
               // Étiquette transparente qui apparaît lors du clic
-              if (_isPressed)
+              //if (_isPressed)
                 Positioned(
                   bottom: 0,
                   left: 0,
                   right: 0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+                    padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 8.0),
                     decoration: BoxDecoration(
                       color: Colors.black54,
                       borderRadius: const BorderRadius.only(
@@ -719,9 +1073,9 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                     child: Text(
                       widget.title,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Colors.white,
-                        fontSize: 12,
+                        fontSize: titleFontSize,
                         fontWeight: FontWeight.w500,
                       ),
                     ),

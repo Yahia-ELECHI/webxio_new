@@ -437,4 +437,30 @@ class NotificationService {
       return false;
     }
   }
+
+  // Créer une notification pour une alerte de budget du projet (ancienne méthode, maintenue pour compatibilité)
+  Future<bool> createProjectBudgetAlertNotification(String projectId, String projectName, int thresholdPercentage, String userId) async {
+    return createProjectBalanceAlertNotification(projectId, projectName, 0, userId);
+  }
+  
+  // Créer une notification pour une alerte de solde négatif du projet
+  Future<bool> createProjectBalanceAlertNotification(String projectId, String projectName, double balance, String userId) async {
+    try {
+      final notification = Notification(
+        id: _uuid.v4(),
+        title: 'Alerte solde négatif',
+        message: 'Le projet "$projectName" a un solde négatif.',
+        createdAt: DateTime.now(),
+        type: NotificationType.projectBudgetAlert,
+        relatedId: projectId,
+        userId: userId,
+      );
+      
+      await _supabase.from('notifications').insert(notification.toJson());
+      return true;
+    } catch (e) {
+      print('Erreur lors de la création de la notification d\'alerte de solde: $e');
+      return false;
+    }
+  }
 }

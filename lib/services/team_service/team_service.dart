@@ -50,7 +50,7 @@ class TeamService {
       
       return teamsResponse.map<Team>((json) => Team.fromJson(json)).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des équipes: $e');
+      // print('Erreur lors de la récupération des équipes: $e');
       rethrow;
     }
   }
@@ -65,7 +65,7 @@ class TeamService {
       
       return Team.fromJson(response);
     } catch (e) {
-      print('Erreur lors de la récupération de l\'équipe: $e');
+      // print('Erreur lors de la récupération de l\'équipe: $e');
       rethrow;
     }
   }
@@ -102,7 +102,7 @@ class TeamService {
       
       return Team.fromJson(response);
     } catch (e) {
-      print('Erreur lors de la création de l\'équipe: $e');
+      // print('Erreur lors de la création de l\'équipe: $e');
       rethrow;
     }
   }
@@ -118,7 +118,7 @@ class TeamService {
       
       return Team.fromJson(response);
     } catch (e) {
-      print('Erreur lors de la mise à jour de l\'équipe: $e');
+      // print('Erreur lors de la mise à jour de l\'équipe: $e');
       rethrow;
     }
   }
@@ -130,7 +130,7 @@ class TeamService {
           .delete()
           .eq('id', teamId);
     } catch (e) {
-      print('Erreur lors de la suppression de l\'équipe: $e');
+      // print('Erreur lors de la suppression de l\'équipe: $e');
       rethrow;
     }
   }
@@ -153,7 +153,7 @@ class TeamService {
         });
       }).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des membres de l\'équipe: $e');
+      // print('Erreur lors de la récupération des membres de l\'équipe: $e');
       rethrow;
     }
   }
@@ -168,7 +168,7 @@ class TeamService {
       
       return TeamMember.fromJson(response);
     } catch (e) {
-      print('Erreur lors de l\'ajout du membre à l\'équipe: $e');
+      // print('Erreur lors de l\'ajout du membre à l\'équipe: $e');
       rethrow;
     }
   }
@@ -184,7 +184,7 @@ class TeamService {
       
       return TeamMember.fromJson(response);
     } catch (e) {
-      print('Erreur lors de la mise à jour du membre de l\'équipe: $e');
+      // print('Erreur lors de la mise à jour du membre de l\'équipe: $e');
       rethrow;
     }
   }
@@ -196,7 +196,7 @@ class TeamService {
           .delete()
           .eq('id', memberId);
     } catch (e) {
-      print('Erreur lors de la suppression du membre de l\'équipe: $e');
+      // print('Erreur lors de la suppression du membre de l\'équipe: $e');
       rethrow;
     }
   }
@@ -222,7 +222,7 @@ class TeamService {
       
       return projectsResponse.map<Project>((json) => Project.fromJson(json)).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des projets de l\'équipe: $e');
+      // print('Erreur lors de la récupération des projets de l\'équipe: $e');
       rethrow;
     }
   }
@@ -273,7 +273,7 @@ class TeamService {
       
       return teamsResponse.map<Team>((json) => Team.fromJson(json)).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des équipes du projet: $e');
+      // print('Erreur lors de la récupération des équipes du projet: $e');
       rethrow;
     }
   }
@@ -299,11 +299,11 @@ class TeamService {
             
         await _notifyProjectAddedToTeam(team, Project.fromJson(project));
       } catch (notifError) {
-        print('Erreur lors de l\'envoi de la notification: $notifError');
+        // print('Erreur lors de l\'envoi de la notification: $notifError');
         // On ne propage pas l'erreur pour ne pas interrompre le flux principal
       }
     } catch (e) {
-      print('Erreur lors de l\'ajout du projet à l\'équipe: $e');
+      // print('Erreur lors de l\'ajout du projet à l\'équipe: $e');
       rethrow;
     }
   }
@@ -316,7 +316,7 @@ class TeamService {
           .eq('team_id', teamId)
           .eq('project_id', projectId);
     } catch (e) {
-      print('Erreur lors de la suppression du projet de l\'équipe: $e');
+      // print('Erreur lors de la suppression du projet de l\'équipe: $e');
       rethrow;
     }
   }
@@ -328,7 +328,7 @@ class TeamService {
           .delete()
           .eq('project_id', projectId);
     } catch (e) {
-      print('Erreur lors de la suppression de toutes les équipes du projet: $e');
+      // print('Erreur lors de la suppression de toutes les équipes du projet: $e');
       rethrow;
     }
   }
@@ -380,7 +380,7 @@ class TeamService {
 
       return teamsData.map<Team>((item) => Team.fromJson(item)).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des équipes associées à la tâche: $e');
+      // print('Erreur lors de la récupération des équipes associées à la tâche: $e');
       rethrow;
     }
   }
@@ -394,7 +394,7 @@ class TeamService {
             'team_id': teamId,
           });
     } catch (e) {
-      print('Erreur lors de l\'assignation de la tâche à l\'équipe: $e');
+      // print('Erreur lors de l\'assignation de la tâche à l\'équipe: $e');
       rethrow;
     }
   }
@@ -407,7 +407,7 @@ class TeamService {
           .eq('task_id', taskId)
           .eq('team_id', teamId);
     } catch (e) {
-      print('Erreur lors de la suppression de l\'assignation de la tâche: $e');
+      // print('Erreur lors de la suppression de l\'assignation de la tâche: $e');
       rethrow;
     }
   }
@@ -419,7 +419,7 @@ class TeamService {
           .delete()
           .eq('task_id', taskId);
     } catch (e) {
-      print('Erreur lors de la suppression des assignations d\'équipes: $e');
+      // print('Erreur lors de la suppression des assignations d\'équipes: $e');
       rethrow;
     }
   }
@@ -440,7 +440,7 @@ class TeamService {
         });
       }).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des invitations envoyées: $e');
+      // print('Erreur lors de la récupération des invitations envoyées: $e');
       rethrow;
     }
   }
@@ -471,38 +471,38 @@ class TeamService {
         });
       }).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des invitations reçues: $e');
+      // print('Erreur lors de la récupération des invitations reçues: $e');
       rethrow;
     }
   }
 
   Future<Invitation> createInvitation(Invitation invitation) async {
     try {
-      print('Début de la création d\'invitation pour ${invitation.email}');
+      // print('Début de la création d\'invitation pour ${invitation.email}');
       final response = await _supabase
           .from(_invitationsTable)
           .insert(invitation.toJson())
           .select()
           .single();
       
-      print('Invitation créée avec succès dans la base de données');
+      // print('Invitation créée avec succès dans la base de données');
       
       // Envoi de l'email via Brevo
       try {
         final success = await EmailService.sendInvitationEmailFromInvitation(invitation);
         if (success) {
-          print('Email d\'invitation envoyé avec succès à ${invitation.email}');
+          // print('Email d\'invitation envoyé avec succès à ${invitation.email}');
         } else {
-          print('Échec de l\'envoi de l\'email d\'invitation à ${invitation.email}');
+          // print('Échec de l\'envoi de l\'email d\'invitation à ${invitation.email}');
         }
       } catch (emailError) {
-        print('Erreur lors de l\'envoi de l\'email d\'invitation: $emailError');
+        // print('Erreur lors de l\'envoi de l\'email d\'invitation: $emailError');
         // Continuer malgré l'erreur d'email, l'invitation est créée dans la DB
       }
       
       return Invitation.fromJson(response);
     } catch (e) {
-      print('Erreur lors de la création de l\'invitation: $e');
+      // print('Erreur lors de la création de l\'invitation: $e');
       rethrow;
     }
   }
@@ -518,7 +518,7 @@ class TeamService {
       
       return Invitation.fromJson(response);
     } catch (e) {
-      print('Erreur lors de la mise à jour du statut de l\'invitation: $e');
+      // print('Erreur lors de la mise à jour du statut de l\'invitation: $e');
       rethrow;
     }
   }
@@ -530,7 +530,7 @@ class TeamService {
           .delete()
           .eq('id', invitationId);
     } catch (e) {
-      print('Erreur lors de la suppression de l\'invitation: $e');
+      // print('Erreur lors de la suppression de l\'invitation: $e');
       rethrow;
     }
   }
@@ -541,7 +541,7 @@ class TeamService {
       // Nettoyer le token (supprimer espaces et normaliser)
       final cleanToken = token.trim();
       
-      print('Recherche de l\'invitation avec le token: "$cleanToken"');
+      // print('Recherche de l\'invitation avec le token: "$cleanToken"');
       
       // Vérifier si le token est valide
       if (cleanToken.isEmpty) {
@@ -553,12 +553,12 @@ class TeamService {
           .from(_invitationsTable)
           .select();
       
-      print('Nombre total d\'invitations dans la base: ${allInvitations.length}');
+      // print('Nombre total d\'invitations dans la base: ${allInvitations.length}');
       
       // Afficher les détails de chaque invitation pour le débogage
       for (var inv in allInvitations) {
         final invToken = inv['token'] as String;
-        print('Invitation trouvée dans la DB: "$invToken" - Pour: ${inv['email']} - Correspond au token saisi: ${invToken == cleanToken}');
+        // print('Invitation trouvée dans la DB: "$invToken" - Pour: ${inv['email']} - Correspond au token saisi: ${invToken == cleanToken}');
       }
       
       // On essaie d'abord une recherche par similarité pour le débogage
@@ -567,7 +567,7 @@ class TeamService {
           .select()
           .ilike('token', '%${cleanToken.substring(0, math.min(8, cleanToken.length))}%');
           
-      print('Résultats similaires trouvés: ${likeResults.length}');
+      // print('Résultats similaires trouvés: ${likeResults.length}');
       
       // Rechercher l'invitation spécifique
       try {
@@ -577,10 +577,10 @@ class TeamService {
             .eq('token', cleanToken)
             .single();
         
-        print('Invitation trouvée avec succès pour le token: "$cleanToken"');
+        // print('Invitation trouvée avec succès pour le token: "$cleanToken"');
         return Invitation.fromJson(response);
       } catch (specificError) {
-        print('Erreur spécifique lors de la recherche exacte: $specificError');
+        // print('Erreur spécifique lors de la recherche exacte: $specificError');
         
         // Si on ne trouve pas avec la jointure, essayons sans
         final responseNoJoin = await _supabase
@@ -589,11 +589,11 @@ class TeamService {
             .eq('token', cleanToken)
             .single();
             
-        print('Invitation trouvée sans jointure pour le token: "$cleanToken"');
+        // print('Invitation trouvée sans jointure pour le token: "$cleanToken"');
         return Invitation.fromJson(responseNoJoin);
       }
     } catch (e) {
-      print('Erreur lors de la récupération de l\'invitation par token: $e');
+      // print('Erreur lors de la récupération de l\'invitation par token: $e');
       
       if (e.toString().contains('The result contains 0 rows')) {
         throw Exception('Aucune invitation trouvée avec ce code. Veuillez vérifier le code saisi ou contacter l\'administrateur.');
@@ -660,7 +660,7 @@ class TeamService {
         await updateInvitationStatus(invitationId, InvitationStatus.accepted);
       }
     } catch (e) {
-      print('Erreur lors de l\'acceptation de l\'invitation: $e');
+      // print('Erreur lors de l\'acceptation de l\'invitation: $e');
       rethrow;
     }
   }
@@ -670,7 +670,7 @@ class TeamService {
     try {
       final cleanToken = token.trim();
       
-      print('Tentative d\'acceptation directe par token: "$cleanToken"');
+      // print('Tentative d\'acceptation directe par token: "$cleanToken"');
       
       final user = _supabase.auth.currentUser;
       if (user == null) {
@@ -688,12 +688,12 @@ class TeamService {
           .eq('token', cleanToken);
           
       if (invitationResults.isEmpty) {
-        print('Aucune invitation trouvée avec le token: "$cleanToken"');
+        // print('Aucune invitation trouvée avec le token: "$cleanToken"');
         throw Exception('Aucune invitation trouvée avec ce code. Veuillez vérifier le code saisi.');
       }
       
       final invitationData = invitationResults.first;
-      print('Invitation trouvée: ${invitationData['id']} pour l\'équipe: ${invitationData['team_id']}');
+      // print('Invitation trouvée: ${invitationData['id']} pour l\'équipe: ${invitationData['team_id']}');
       
       final invitation = Invitation.fromJson(invitationData);
       
@@ -718,10 +718,10 @@ class TeamService {
           .single();
       
       final teamName = teamData['name'] as String;
-      print('Nom de l\'équipe: $teamName');
+      // print('Nom de l\'équipe: $teamName');
       
       if (memberCheck.isNotEmpty) {
-        print('L\'utilisateur est déjà membre de l\'équipe');
+        // print('L\'utilisateur est déjà membre de l\'équipe');
         // Mettre à jour le statut de l'invitation
         await updateInvitationStatus(invitation.id, InvitationStatus.accepted);
         
@@ -731,7 +731,7 @@ class TeamService {
           await updateTeamMember(member.copyWith(status: TeamMemberStatus.active));
         }
       } else {
-        print('Ajout de l\'utilisateur à l\'équipe');
+        // print('Ajout de l\'utilisateur à l\'équipe');
         // Ajouter l'utilisateur comme membre de l'équipe
         await _supabase.from(_teamMembersTable).insert({
           'id': const Uuid().v4(),
@@ -746,10 +746,10 @@ class TeamService {
         await updateInvitationStatus(invitation.id, InvitationStatus.accepted);
       }
       
-      print('Invitation acceptée avec succès pour l\'équipe: $teamName');
+      // print('Invitation acceptée avec succès pour l\'équipe: $teamName');
       return; // Succès
     } catch (e) {
-      print('Erreur lors de l\'acceptation de l\'invitation par token: $e');
+      // print('Erreur lors de l\'acceptation de l\'invitation par token: $e');
       rethrow;
     }
   }
@@ -771,10 +771,10 @@ class TeamService {
           'email': user.email,
           'updated_at': DateTime.now().toIso8601String(),
         });
-        print('Profil créé pour l\'utilisateur: ${user.email}');
+        // print('Profil créé pour l\'utilisateur: ${user.email}');
       }
     } catch (e) {
-      print('Erreur lors de la vérification/création du profil: $e');
+      // print('Erreur lors de la vérification/création du profil: $e');
     }
   }
 
@@ -783,7 +783,7 @@ class TeamService {
     try {
       await updateInvitationStatus(invitationId, InvitationStatus.rejected);
     } catch (e) {
-      print('Erreur lors du rejet de l\'invitation: $e');
+      // print('Erreur lors du rejet de l\'invitation: $e');
       rethrow;
     }
   }
@@ -805,7 +805,7 @@ class TeamService {
       
       return response.isNotEmpty;
     } catch (e) {
-      print('Erreur lors de la vérification de l\'appartenance à l\'équipe: $e');
+      // print('Erreur lors de la vérification de l\'appartenance à l\'équipe: $e');
       return false;
     }
   }
@@ -828,7 +828,7 @@ class TeamService {
       
       return response.isNotEmpty;
     } catch (e) {
-      print('Erreur lors de la vérification du rôle d\'administrateur: $e');
+      // print('Erreur lors de la vérification du rôle d\'administrateur: $e');
       return false;
     }
   }
@@ -861,7 +861,7 @@ class TeamService {
       
       return teamsResponse.map<Team>((json) => Team.fromJson(json)).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des équipes de l\'utilisateur: $e');
+      // print('Erreur lors de la récupération des équipes de l\'utilisateur: $e');
       rethrow;
     }
   }
@@ -884,7 +884,7 @@ class TeamService {
         });
       }).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des membres de l\'équipe avec informations: $e');
+      // print('Erreur lors de la récupération des membres de l\'équipe avec informations: $e');
       rethrow;
     }
   }
@@ -913,7 +913,7 @@ class TeamService {
       
       return memberResponse.isEmpty; // Peut être ajouté si pas déjà membre
     } catch (e) {
-      print('Erreur lors de la vérification de l\'ajout d\'utilisateur: $e');
+      // print('Erreur lors de la vérification de l\'ajout d\'utilisateur: $e');
       return false;
     }
   }
@@ -953,7 +953,7 @@ class TeamService {
         'pending_invitations_count': pendingInvitationsCount,
       };
     } catch (e) {
-      print('Erreur lors de la récupération des statistiques de l\'équipe: $e');
+      // print('Erreur lors de la récupération des statistiques de l\'équipe: $e');
       rethrow;
     }
   }
@@ -1012,7 +1012,7 @@ class TeamService {
       
       return uniqueMembers;
     } catch (e) {
-      print('Erreur lors de la récupération des membres des équipes: $e');
+      // print('Erreur lors de la récupération des membres des équipes: $e');
       rethrow;
     }
   }
@@ -1044,7 +1044,7 @@ class TeamService {
       
       return teamsResponse.map<Team>((json) => Team.fromJson(json)).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des équipes d\'administration: $e');
+      // print('Erreur lors de la récupération des équipes d\'administration: $e');
       rethrow;
     }
   }
@@ -1065,7 +1065,7 @@ class TeamService {
         });
       }).toList();
     } catch (e) {
-      print('Erreur lors de la récupération des membres d\'équipe pour l\'utilisateur: $e');
+      // print('Erreur lors de la récupération des membres d\'équipe pour l\'utilisateur: $e');
       rethrow;
     }
   }
@@ -1092,7 +1092,7 @@ class TeamService {
         );
       }
     } catch (e) {
-      print('Erreur lors de l\'envoi des notifications aux membres: $e');
+      // print('Erreur lors de l\'envoi des notifications aux membres: $e');
     }
   }
 }

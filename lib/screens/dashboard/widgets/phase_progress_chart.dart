@@ -158,6 +158,7 @@ class PhaseProgressChart extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
+            // Barre de progression des tâches
             LayoutBuilder(
               builder: (context, constraints) {
                 final availableWidth = constraints.maxWidth;
@@ -185,6 +186,65 @@ class PhaseProgressChart extends StatelessWidget {
                 );
               },
             ),
+            // Afficher la barre de progression du budget si disponible
+            if (phase.budgetAllocated != null && phase.budgetAllocated! > 0 && phase.budgetConsumed != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Budget: ${phase.budgetConsumed!.toStringAsFixed(0)}/${phase.budgetAllocated!.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        Text(
+                          '${((phase.budgetConsumed! / phase.budgetAllocated!) * 100).toInt()}%',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: phase.budgetStatusColor ?? Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final availableWidth = constraints.maxWidth;
+                        final budgetUsage = (phase.budgetConsumed! / phase.budgetAllocated!);
+                        final progressWidth = (availableWidth * budgetUsage).clamp(0.0, availableWidth);
+                        
+                        return Container(
+                          width: availableWidth,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: progressWidth,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: phase.budgetStatusColor ?? Colors.grey,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,

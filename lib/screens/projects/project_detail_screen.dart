@@ -3,7 +3,7 @@ import '../../models/project_model.dart';
 import '../../models/task_model.dart';
 import '../../models/team_model.dart';
 import '../../models/phase_model.dart';
-import '../../models/budget_transaction_model.dart';
+import '../../models/project_transaction_model.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/user_service.dart';
@@ -15,7 +15,6 @@ import '../tasks/task_form_screen.dart';
 import '../tasks/task_detail_screen.dart';
 import '../budget/budget_allocation_screen.dart';
 import '../budget/transaction_form_screen.dart';
-import '../budget/transaction_list_screen.dart';
 import 'phases/phases_screen.dart';
 import 'project_form_screen.dart';
 import '../../widgets/custom_app_bar.dart';
@@ -43,7 +42,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   List<Task> _tasks = [];
   List<Team> _projectTeams = [];
   List<Phase> _projectPhases = [];
-  List<BudgetTransaction> _projectTransactions = [];
+  List<ProjectTransaction> _projectTransactions = [];
   
   bool _isLoading = true;
   bool _isLoadingTeams = true;
@@ -93,8 +92,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         _userDisplayNames = userDisplayNames;
       });
       
+      // Charger les équipes et les phases en parallèle
       _loadProjectTeams();
-      _loadProjectPhases();
+      
+      // Charger les phases en premier, puis le budget après, car la mise à jour du budget
+      // dépend des phases déjà chargées
+      await _loadProjectPhases();
       _loadProjectBudget();
     } catch (e) {
       setState(() {
@@ -164,6 +167,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       setState(() {
         _projectTransactions = transactions;
         _isLoadingBudget = false;
+        
+        // Mettre à jour les budgets des phases avec les données de transactions
+        _updatePhasesBudgetFromTransactions();
       });
     } catch (e) {
       setState(() {
@@ -171,6 +177,68 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         _errorMessage = 'Erreur lors du chargement du budget: $e';
       });
     }
+  }
+
+  // Méthode pour calculer et mettre à jour les budgets des phases à partir des transactions
+  void _updatePhasesBudgetFromTransactions() {
+    // Créer une map pour suivre les transactions de chaque phase
+    Map<String, List<ProjectTransaction>> transactionsByPhase = {};
+    
+    // Regrouper les transactions par phase
+    for (var transaction in _projectTransactions) {
+      if (transaction.phaseId != null) {
+        if (!transactionsByPhase.containsKey(transaction.phaseId)) {
+          transactionsByPhase[transaction.phaseId!] = [];
+        }
+        transactionsByPhase[transaction.phaseId!]!.add(transaction);
+      }
+    }
+    
+    // Mettre à jour les données budgétaires pour chaque phase
+    List<Phase> updatedPhases = [];
+    
+    for (var phase in _projectPhases) {
+      double budgetAllocated = phase.budgetAllocated ?? 0;
+      double budgetConsumed = phase.budgetConsumed ?? 0;
+      
+      // Si la phase a des transactions, recalculer ses données budgétaires
+      if (transactionsByPhase.containsKey(phase.id)) {
+        final phaseTransactions = transactionsByPhase[phase.id]!;
+        
+        // Pour le budget alloué, utiliser soit la valeur existante, soit calculer à partir des revenus
+        if (budgetAllocated == 0) {
+          double allocatedFromTransactions = phaseTransactions
+              .where((tx) => tx.isIncome)
+              .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+          
+          if (allocatedFromTransactions > 0) {
+            budgetAllocated = allocatedFromTransactions;
+          }
+        }
+        
+        // Pour le budget consommé, utiliser soit la valeur existante, soit calculer à partir des dépenses
+        // IMPORTANT: Assurons-nous que budgetConsumed est bien la valeur CONSOMMÉE (dépensée) et non le reste
+        budgetConsumed = phaseTransactions
+            .where((tx) => !tx.isIncome)
+            .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
+      }
+      
+      // Si le budget alloué est toujours 0 mais que nous avons un budget de projet, allouer une part égale à chaque phase
+      if (budgetAllocated == 0 && _project!.budgetAllocated != null && _project!.budgetAllocated! > 0) {
+        budgetAllocated = _project!.budgetAllocated! / _projectPhases.length;
+      }
+      
+      // Mettre à jour la phase avec les nouvelles valeurs budgétaires
+      updatedPhases.add(phase.copyWith(
+        budgetAllocated: budgetAllocated,
+        budgetConsumed: budgetConsumed,
+      ));
+    }
+    
+    // Mettre à jour la liste des phases
+    setState(() {
+      _projectPhases = updatedPhases;
+    });
   }
 
   @override
@@ -745,6 +813,49 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
             ),
           
+          // Budget de la phase - si des données budgétaires sont disponibles
+          if (phase.budgetAllocated != null && phase.budgetAllocated! > 0 && phase.budgetConsumed != null)
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, isExpanded ? 0 : 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Budget: ${phase.budgetConsumed!.toStringAsFixed(0)}/${phase.budgetAllocated!.toStringAsFixed(0)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                            Text(
+                              '${(phase.budgetConsumed! / phase.budgetAllocated! * 100).toStringAsFixed(0)}%',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: _getBudgetColor(phase.budgetConsumed! / phase.budgetAllocated! * 100),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        LinearProgressIndicator(
+                          value: phase.budgetConsumed! / phase.budgetAllocated!,
+                          backgroundColor: Colors.grey[300],
+                          valueColor: AlwaysStoppedAnimation<Color>(_getBudgetColor(phase.budgetConsumed! / phase.budgetAllocated! * 100)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          
           // Liste des tâches - visible uniquement si déplié
           AnimatedCrossFade(
             firstChild: const SizedBox(height: 0),
@@ -1176,23 +1287,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            TextButton.icon(
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => BudgetAllocationScreen(
-                      projectId: _project!.id,
-                    ),
-                  ),
-                );
-                if (result == true) {
-                  _loadProjectBudget();
-                }
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('Ajouter un budget'),
-            ),
+            // Le bouton "Ajouter un budget" a été supprimé car nous utilisons maintenant une approche par projet
           ],
         ),
         const SizedBox(height: 16),
@@ -1211,7 +1306,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'Aucun budget défini pour ce projet',
+                    'Aucune transaction financière pour ce projet',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -1219,7 +1314,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Les budgets vous permettent de gérer les dépenses de votre projet',
+                    'Les transactions vous permettent de gérer les revenus et dépenses de votre projet',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.grey,
@@ -1231,7 +1326,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       final result = await Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => BudgetAllocationScreen(
+                          builder: (context) => TransactionFormScreen(
                             projectId: _project!.id,
                           ),
                         ),
@@ -1241,7 +1336,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       }
                     },
                     icon: const Icon(Icons.add),
-                    label: const Text('Ajouter un budget'),
+                    label: const Text('Ajouter une transaction'),
                   ),
                 ],
               ),
@@ -1271,5 +1366,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
       ],
     );
+  }
+
+  Color _getBudgetColor(double usagePercentage) {
+    if (usagePercentage < 50) {
+      return Colors.green; // Moins de 50% du budget utilisé : vert
+    } else if (usagePercentage < 75) {
+      return Colors.orange; // Entre 50% et 75% : orange
+    } else {
+      return Colors.red; // Plus de 75% : rouge
+    }
   }
 }

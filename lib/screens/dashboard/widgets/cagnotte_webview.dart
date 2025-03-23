@@ -22,7 +22,7 @@ class CagnotteWebView extends StatefulWidget {
 
 class _CagnotteWebViewState extends State<CagnotteWebView> {
   final PreferencesService _preferencesService = PreferencesService();
-  late WebViewController _controller;
+  WebViewController? _controller;
   String _currentUrl = '';
   bool _isLoading = true;
   bool _isEditing = false;
@@ -64,7 +64,7 @@ class _CagnotteWebViewState extends State<CagnotteWebView> {
             });
 
             // Optimiser l'affichage pour le mobile et activer le défilement
-            _controller.runJavaScript('''
+            _controller!.runJavaScript('''
               document.querySelector('meta[name="viewport"]').content = 'width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes';
               
               // Style pour permettre le défilement
@@ -106,7 +106,7 @@ class _CagnotteWebViewState extends State<CagnotteWebView> {
             ''');
           },
           onWebResourceError: (WebResourceError error) {
-            print('WebView error: ${error.description}');
+            // print('WebView error: ${error.description}');
           },
         ),
       )
@@ -132,7 +132,7 @@ class _CagnotteWebViewState extends State<CagnotteWebView> {
         _isEditing = false;
         _currentUrl = newUrl;
       });
-      _controller.loadRequest(Uri.parse(newUrl));
+      _controller!.loadRequest(Uri.parse(newUrl));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Veuillez entrer une URL valide')),
@@ -230,6 +230,12 @@ class _CagnotteWebViewState extends State<CagnotteWebView> {
       isEmulator = false;
     }
 
+    if (_controller == null) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
     if (isEmulator) {
       // Version optimisée pour l'émulateur et les tests avec souris
       return Column(
@@ -244,7 +250,7 @@ class _CagnotteWebViewState extends State<CagnotteWebView> {
                     child: SizedBox(
                       width: double.infinity,
                       height: MediaQuery.of(context).size.height * 0.8, // Augmenter la hauteur pour afficher plus de contenu
-                      child: WebViewWidget(controller: _controller),
+                      child: WebViewWidget(controller: _controller!),
                     ),
                   ),
                 ),
@@ -268,7 +274,7 @@ class _CagnotteWebViewState extends State<CagnotteWebView> {
             onVerticalDragUpdate: (_) {},
             onHorizontalDragUpdate: (_) {},
             behavior: HitTestBehavior.translucent,
-            child: WebViewWidget(controller: _controller),
+            child: WebViewWidget(controller: _controller!),
           ),
           if (_isLoading)
             const Center(

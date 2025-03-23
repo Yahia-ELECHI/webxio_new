@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
 import '../models/dashboard_chart_models.dart';
 
 class TaskDistributionChart extends StatelessWidget {
@@ -47,81 +47,56 @@ class TaskDistributionChart extends StatelessWidget {
                         ),
                       ),
                     )
-                  : _buildPieChart(),
+                  : _buildSyncfusionChart(),
             ),
-            if (showLabels) const SizedBox(height: 8),
-            if (showLabels) _buildLegend(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPieChart() {
-    return PieChart(
-      PieChartData(
-        pieTouchData: PieTouchData(
-          touchCallback: (FlTouchEvent event, pieTouchResponse) {
-            // Logique pour gérer les interactions
-          },
-        ),
-        borderData: FlBorderData(show: false),
-        sectionsSpace: 2,
-        centerSpaceRadius: 30,
-        sections: _buildSections(),
+  Widget _buildSyncfusionChart() {
+    return SfCircularChart(
+      margin: EdgeInsets.zero,
+      tooltipBehavior: TooltipBehavior(
+        enable: true,
+        format: 'point.x : point.y tâches',
+        duration: 3000,
       ),
-    );
-  }
-
-  List<PieChartSectionData> _buildSections() {
-    final total = data.fold<int>(0, (sum, item) => sum + item.count);
-    
-    return data.asMap().entries.map((entry) {
-      final index = entry.key;
-      final item = entry.value;
-      final percentage = total > 0 ? (item.count / total) * 100 : 0;
-      
-      return PieChartSectionData(
-        color: item.color,
-        value: item.count.toDouble(),
-        title: percentage >= 10 ? '${percentage.toStringAsFixed(1)}%' : '',
-        radius: 20,
-        titleStyle: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          color: Color.fromARGB(255, 73, 72, 72),
+      series: <CircularSeries<TaskDistributionData, String>>[
+        DoughnutSeries<TaskDistributionData, String>(
+          dataSource: data,
+          xValueMapper: (TaskDistributionData data, _) => data.label,
+          yValueMapper: (TaskDistributionData data, _) => data.count,
+          dataLabelMapper: (TaskDistributionData data, _) => data.count.toString(),
+          pointColorMapper: (TaskDistributionData data, _) => data.color,
+          dataLabelSettings: const DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.outside,
+            connectorLineSettings: ConnectorLineSettings(
+              type: ConnectorType.curve,
+              length: '15%',
+            ),
+            textStyle: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 10,
+            ),
+          ),
+          radius: '80%',
+          innerRadius: '60%',
+          explode: true,
+          explodeIndex: 0,
+          explodeOffset: '10%',
+          enableTooltip: true,
+          animationDuration: 1200,
         ),
-      );
-    }).toList();
-  }
-
-  Widget _buildLegend() {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 7,
-      children: data.map((item) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: item.color,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              '${item.label} (${item.count})',
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey[800],
-              ),
-            ),
-          ],
-        );
-      }).toList(),
+      ],
+      legend: Legend(
+        isVisible: showLabels,
+        overflowMode: LegendItemOverflowMode.wrap,
+        position: LegendPosition.bottom,
+        textStyle: const TextStyle(fontSize: 10),
+      ),
     );
   }
 }

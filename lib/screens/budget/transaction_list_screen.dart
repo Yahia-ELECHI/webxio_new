@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../models/budget_transaction_model.dart';
+import '../../models/project_transaction_model.dart';
 import '../../services/budget_service.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/error_message.dart';
@@ -28,7 +28,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
   final BudgetService _budgetService = BudgetService();
   bool _isLoading = true;
   String? _errorMessage;
-  List<BudgetTransaction> _transactions = [];
+  List<ProjectTransaction> _transactions = [];
   
   final NumberFormat _currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
   
@@ -54,7 +54,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     });
 
     try {
-      List<BudgetTransaction> transactions;
+      List<ProjectTransaction> transactions;
       
       // Charger les transactions soit pour un budget spécifique, soit toutes
       if (widget.budgetId != null) {
@@ -72,7 +72,9 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
       // Extraire toutes les catégories uniques
       Set<String> categorySet = {'Toutes'};
       for (var transaction in transactions) {
-        categorySet.add(transaction.category);
+        if (transaction.category.isNotEmpty) {
+          categorySet.add(transaction.category);
+        }
       }
       
       setState(() {
@@ -88,8 +90,8 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     }
   }
 
-  List<BudgetTransaction> _getFilteredTransactions() {
-    List<BudgetTransaction> filteredList = List.from(_transactions);
+  List<ProjectTransaction> _getFilteredTransactions() {
+    List<ProjectTransaction> filteredList = List.from(_transactions);
     
     // Appliquer le filtre de catégorie
     if (_filterCategory != 'Toutes') {
@@ -98,9 +100,9 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     
     // Appliquer les filtres d'entrée/sortie
     if (_showOnlyIncomes && !_showOnlyExpenses) {
-      filteredList = filteredList.where((t) => t.amount > 0).toList();
+      filteredList = filteredList.where((t) => t.transactionType == 'income').toList();
     } else if (_showOnlyExpenses && !_showOnlyIncomes) {
-      filteredList = filteredList.where((t) => t.amount < 0).toList();
+      filteredList = filteredList.where((t) => t.transactionType == 'expense').toList();
     }
     
     // Appliquer le tri
@@ -287,7 +289,7 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     double totalIncomes = 0;
     double totalExpenses = 0;
     for (var transaction in filteredTransactions) {
-      if (transaction.amount > 0) {
+      if (transaction.transactionType == 'income') {
         totalIncomes += transaction.amount;
       } else {
         totalExpenses += transaction.amount.abs();
@@ -387,8 +389,8 @@ class _TransactionListScreenState extends State<TransactionListScreen> {
     );
   }
 
-  Widget _buildTransactionListItem(BudgetTransaction transaction) {
-    final bool isIncome = transaction.amount > 0;
+  Widget _buildTransactionListItem(ProjectTransaction transaction) {
+    final bool isIncome = transaction.transactionType == 'income';
     final Color amountColor = isIncome ? Colors.green : Colors.red;
     final IconData icon = isIncome 
         ? Icons.arrow_upward 

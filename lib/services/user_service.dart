@@ -46,7 +46,7 @@ class UserService {
       
       return displayName;
     } catch (e) {
-      print('Erreur lors de la récupération du nom d\'utilisateur: $e');
+      // print('Erreur lors de la récupération du nom d\'utilisateur: $e');
       return 'Utilisateur $userId';
     }
   }
@@ -100,7 +100,7 @@ class UserService {
           }
         }
       } catch (e) {
-        print('Erreur lors de la récupération des noms d\'utilisateurs: $e');
+        // print('Erreur lors de la récupération des noms d\'utilisateurs: $e');
         // Ajouter des valeurs par défaut pour les IDs non trouvés
         for (final id in uncachedIds) {
           if (!_displayNameCache.containsKey(id)) {
