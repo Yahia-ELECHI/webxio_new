@@ -25,6 +25,7 @@ import 'widgets/sidebar_menu.dart';
 import 'widgets/islamic_patterns.dart';
 import 'widgets/notification_popup.dart';
 import 'services/auth_service.dart';
+import 'services/cache_service.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:io';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -47,6 +48,9 @@ void main() async {
   
   // Initialiser les données de locale
   await initializeDateFormatting('fr_FR', null);
+  
+  // Initialiser le service de cache
+  await CacheService().initialize();
   
   // Charger les variables d'environnement
   await dotenv.load(fileName: ".env");
