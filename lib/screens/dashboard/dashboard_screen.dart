@@ -12,6 +12,7 @@ import '../../services/phase_service.dart';
 import '../../services/budget_service.dart';
 import '../../services/user_service.dart';
 import '../../services/project_finance_service.dart';
+import '../../services/cache_service.dart';
 import '../../main.dart'; // Import pour utiliser MainAppScreen
 import 'models/dashboard_chart_models.dart';
 import 'sections/tasks_projects_section.dart';
@@ -35,6 +36,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final BudgetService _budgetService = BudgetService();
   final UserService _userService = UserService();
   final ProjectFinanceService _projectFinanceService = ProjectFinanceService();
+  final CacheService _cacheService = CacheService();
   
   bool _isLoading = true;
   
@@ -95,92 +97,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
     
     try {
-      // Chargement des projets
-      _projectsList = await _projectService.getAllProjects();
+      // 1. Vérifier si des données complètes sont disponibles dans le cache
+      final cachedProjects = _cacheService.getCachedProjects();
+      final cachedTasks = _cacheService.getCachedTasks(null);
+      final cachedPhases = _cacheService.getCachedPhases(null);
+      final cachedTransactions = _cacheService.getCachedTransactions(null);
       
-      // Chargement des données selon le projet sélectionné ou tous les projets
-      if (!_showAllProjects && _selectedProjectId != null) {
+      // Si nous avons toutes les données principales en cache
+      if (cachedProjects != null && cachedProjects.isNotEmpty &&
+          cachedTasks != null && cachedTasks.isNotEmpty &&
+          cachedPhases != null && cachedPhases.isNotEmpty) {
         
-        // Charger les tâches du projet sélectionné
-        _tasksList = await _taskService.getTasksByProject(_selectedProjectId!);
+        // Afficher immédiatement les données du cache
+        setState(() {
+          _projectsList = cachedProjects.map((json) => Project.fromJson(json)).toList();
+          _tasksList = cachedTasks.map((json) => Task.fromJson(json)).toList();
+          _phasesList = cachedPhases.map((json) => Phase.fromJson(json)).toList();
+          
+          if (cachedTransactions != null && cachedTransactions.isNotEmpty) {
+            _projectTransactionsList = cachedTransactions.map((json) => ProjectTransaction.fromJson(json)).toList();
+          }
+          
+          // Créer mapping des tâches
+          _tasksMap = {for (var task in _tasksList) task.id: task};
+          
+          // Mise à jour des graphiques avec les données disponibles
+          _prepareAllChartData();
+          
+          // Montrer tout de suite que le chargement est terminé
+          _isLoading = false;
+        });
         
-        // Charger les phases du projet sélectionné
-        _phasesList = await _phaseService.getPhasesByProject(_selectedProjectId!);
-        
-        // Charger les données budgétaires du projet sélectionné
-        _budgetsList = await _budgetService.getProjectBudgets(_selectedProjectId!);
-        _budgetTransactionsList = await _budgetService.getRecentTransactions(10);
-        
-        // En mode projet spécifique, récupérer uniquement les transactions du projet
-        _projectTransactionsList = await _projectFinanceService.getProjectTransactions(_selectedProjectId!);
-        
-        // Charger l'historique des tâches pour le projet sélectionné
-        final allTasksInProject = await _taskService.getTasksByProject(_selectedProjectId!);
-        _tasksMap = {for (var task in allTasksInProject) task.id: task};
-        
-        // On récupère l'historique pour chaque tâche du projet
-        _taskHistoryList = [];
-        for (var task in allTasksInProject) {
-          final history = await _projectService.getTaskHistory(task.id);
-          _taskHistoryList.addAll(history);
-        }
-        
-        // Limiter à 50 entrées d'historique les plus récentes
-        _taskHistoryList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        if (_taskHistoryList.length > 50) {
-          _taskHistoryList = _taskHistoryList.sublist(0, 50);
-        }
-      } else {
-        // Charger toutes les données
-        _tasksList = await _taskService.getAllTasks();
-        _phasesList = await _phaseService.getAllPhases();
-        _budgetsList = await _budgetService.getBudgets();
-        _budgetTransactionsList = await _budgetService.getRecentTransactions(10);
-        
-        // Charger toutes les transactions accessibles par l'utilisateur
-        _projectTransactionsList = await _projectFinanceService.getAllProjectTransactions();
-        
-        // Créer un mapping des tâches
-        _tasksMap = {for (var task in _tasksList) task.id: task};
-        
-        // Charger l'historique des tâches récentes (limité à 50)
-        _taskHistoryList = [];
-        // On récupère les 10 tâches les plus récentes pour limiter le volume de données
-        final recentTasks = List<Task>.from(_tasksList)
-          ..sort((a, b) => b.updatedAt?.compareTo(a.updatedAt ?? a.createdAt) ?? 
-                            b.createdAt.compareTo(a.createdAt));
-        final tasksToFetch = recentTasks.take(20).toList();
-        
-        for (var task in tasksToFetch) {
-          final history = await _projectService.getTaskHistory(task.id);
-          _taskHistoryList.addAll(history);
-        }
-        
-        // Limiter à 50 entrées d'historique les plus récentes
-        _taskHistoryList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        if (_taskHistoryList.length > 50) {
-          _taskHistoryList = _taskHistoryList.sublist(0, 50);
-        }
+        // 2. Continuer le chargement en arrière-plan (sans bloquer l'UI)
+        _loadFullDataInBackground();
+        return;
       }
       
-      // Préparation des données pour les charts et widgets
-      _prepareTasksByStatusData(_tasksList);
-      _prepareTasksByPriorityData(_tasksList);
-      _prepareProjectProgressData(_projectsList, _phasesList, _tasksList);
-      _prepareUpcomingTasksData(_tasksList);
-      _preparePhaseProgressData(_phasesList, _tasksList);
-      _prepareBudgetOverviewData(_projectsList);
-      _prepareRecentTransactionsData(_projectTransactionsList);
-      
-      // Chargement des noms d'utilisateurs
-      final userIds = <String>{};
-      for (var history in _taskHistoryList) {
-        userIds.add(history.userId);
-      }
-      
-      if (userIds.isNotEmpty) {
-        _userDisplayNames = await _userService.getUsersDisplayNames(userIds.toList());
-      }
+      // Si pas de cache complet, charge normalement
+      await _loadFullData();
       
     } catch (e) {
       print('Erreur lors du chargement des données: $e');
@@ -192,6 +146,182 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _isLoading = false;
       });
     }
+  }
+  
+  // Chargement complet des données (bloquant l'UI jusqu'à ce que tout soit chargé)
+  Future<void> _loadFullData() async {
+    try {
+      // Chargement parallèle des données avec Future.wait pour optimiser le temps de chargement
+      // (tous les appels API sont lancés en même temps)
+      final results = await Future.wait([
+        _projectService.getAllProjects(),
+        _taskService.getAllTasks(),
+        _phaseService.getAllPhases(),
+        _projectFinanceService.getAllProjectTransactions(),
+        _budgetService.getBudgets(),
+        _budgetService.getRecentTransactions(10),
+      ]);
+      
+      // Récupération des résultats avec cast explicite
+      _projectsList = results[0] as List<Project>;
+      _tasksList = results[1] as List<Task>;
+      _phasesList = results[2] as List<Phase>;
+      _projectTransactionsList = results[3] as List<ProjectTransaction>;
+      _budgetsList = results[4] as List<Budget>;
+      _budgetTransactionsList = results[5] as List<BudgetTransaction>;
+      
+      // Créer un mapping des tâches
+      _tasksMap = {for (var task in _tasksList) task.id: task};
+      
+      // Charger l'historique des tâches récentes (limité à 50)
+      await _loadTaskHistory();
+      
+      // Mettre en cache pour la prochaine visite
+      if (_projectsList.isNotEmpty) {
+        _cacheService.cacheProjects(_projectsList.map((p) => p.toJson()).toList());
+      }
+      
+      if (_tasksList.isNotEmpty) {
+        _cacheService.cacheTasks(null, _tasksList.map((t) => t.toJson()).toList());
+      }
+      
+      if (_phasesList.isNotEmpty) {
+        _cacheService.cachePhases(null, _phasesList.map((p) => p.toJson()).toList());
+      }
+      
+      if (_projectTransactionsList.isNotEmpty) {
+        _cacheService.cacheTransactions(null, _projectTransactionsList.map((t) => t.toJson()).toList());
+      }
+      
+      // Préparation des données pour les charts et widgets
+      _prepareAllChartData();
+      
+    } catch (e) {
+      print('Erreur lors du chargement complet des données: $e');
+      rethrow;
+    }
+  }
+  
+  // Version non-bloquante du chargement complet qui s'exécute en arrière-plan
+  Future<void> _loadFullDataInBackground() async {
+    try {
+      // Le même chargement mais en arrière-plan
+      final results = await Future.wait([
+        _projectService.getAllProjects(),
+        _taskService.getAllTasks(),
+        _phaseService.getAllPhases(),
+        _projectFinanceService.getAllProjectTransactions(),
+        _budgetService.getBudgets(),
+        _budgetService.getRecentTransactions(10),
+      ]);
+      
+      // Récupération des résultats avec cast explicite
+      final projects = results[0] as List<Project>;
+      final tasks = results[1] as List<Task>;
+      final phases = results[2] as List<Phase>;
+      final projectTransactions = results[3] as List<ProjectTransaction>;
+      final budgets = results[4] as List<Budget>;
+      final budgetTransactions = results[5] as List<BudgetTransaction>;
+      
+      // Mise en cache des nouvelles données
+      if (projects.isNotEmpty) {
+        _cacheService.cacheProjects(projects.map((p) => p.toJson()).toList());
+      }
+      
+      if (tasks.isNotEmpty) {
+        _cacheService.cacheTasks(null, tasks.map((t) => t.toJson()).toList());
+      }
+      
+      if (phases.isNotEmpty) {
+        _cacheService.cachePhases(null, phases.map((p) => p.toJson()).toList());
+      }
+      
+      if (projectTransactions.isNotEmpty) {
+        _cacheService.cacheTransactions(null, projectTransactions.map((t) => t.toJson()).toList());
+      }
+      
+      // Si le widget est toujours monté, mettre à jour les données
+      if (mounted) {
+        setState(() {
+          _projectsList = projects;
+          _tasksList = tasks;
+          _phasesList = phases;
+          _projectTransactionsList = projectTransactions;
+          _budgetsList = budgets;
+          _budgetTransactionsList = budgetTransactions;
+          
+          // Créer un mapping des tâches
+          _tasksMap = {for (var task in _tasksList) task.id: task};
+          
+          // Préparer toutes les données pour les graphiques
+          _prepareAllChartData();
+        });
+        
+        // Charger l'historique des tâches en arrière-plan et mettre à jour l'interface
+        _loadTaskHistory().then((_) {
+          if (mounted) {
+            setState(() {});
+          }
+        });
+      }
+    } catch (e) {
+      // Silencieux en arrière-plan pour ne pas déranger l'utilisateur
+      print('Erreur lors du chargement en arrière-plan: $e');
+    }
+  }
+  
+  // Méthode dédiée au chargement de l'historique des tâches
+  Future<void> _loadTaskHistory() async {
+    try {
+      _taskHistoryList = [];
+      
+      // On récupère les tâches les plus récentes pour limiter le volume de données
+      final recentTasks = List<Task>.from(_tasksList)
+        ..sort((a, b) => b.updatedAt?.compareTo(a.updatedAt ?? a.createdAt) ?? 
+                          b.createdAt.compareTo(a.createdAt));
+      final tasksToFetch = recentTasks.take(20).toList();
+      
+      // Exécution parallèle des requêtes d'historique
+      final historyFutures = tasksToFetch.map(
+        (task) => _projectService.getTaskHistory(task.id)
+      ).toList();
+      
+      final historyResults = await Future.wait(historyFutures);
+      
+      // Combiner tous les résultats
+      for (var history in historyResults) {
+        _taskHistoryList.addAll(history);
+      }
+      
+      // Limiter à 50 entrées d'historique les plus récentes
+      _taskHistoryList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (_taskHistoryList.length > 50) {
+        _taskHistoryList = _taskHistoryList.sublist(0, 50);
+      }
+      
+      // Chargement des noms d'utilisateurs
+      final userIds = <String>{};
+      for (var history in _taskHistoryList) {
+        userIds.add(history.userId);
+      }
+      
+      if (userIds.isNotEmpty) {
+        _userDisplayNames = await _userService.getUsersDisplayNames(userIds.toList());
+      }
+    } catch (e) {
+      print('Erreur lors du chargement de l\'historique des tâches: $e');
+    }
+  }
+  
+  // Prépare toutes les données pour les graphiques et widgets
+  void _prepareAllChartData() {
+    _prepareTasksByStatusData(_tasksList);
+    _prepareTasksByPriorityData(_tasksList);
+    _prepareProjectProgressData(_projectsList, _phasesList, _tasksList);
+    _prepareUpcomingTasksData(_tasksList);
+    _preparePhaseProgressData(_phasesList, _tasksList);
+    _prepareBudgetOverviewData(_projectsList);
+    _prepareRecentTransactionsData(_projectTransactionsList);
   }
   
   void _prepareTasksByStatusData(List<Task> tasks) {
