@@ -389,38 +389,50 @@ class _NotificationIconState extends State<NotificationIcon> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _showNotificationPopup(context),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          const Icon(Icons.notifications, color: Colors.white),
-          if (_unreadCount > 0 && !_isLoading)
-            Positioned(
-              top: -5,
-              right: -5,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                constraints: const BoxConstraints(
-                  minWidth: 16,
-                  minHeight: 16,
-                ),
-                child: Text(
-                  _unreadCount > 9 ? '9+' : _unreadCount.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
+    // Utiliser MediaQuery pour adapter la taille de l'icône à la taille de l'écran
+    final double iconSize = MediaQuery.of(context).size.width < 360 ? 24.0 : 28.0;
+    
+    return Container(
+      // Ajouter une contrainte de largeur pour éviter le débordement
+      width: iconSize + 12,
+      height: iconSize + 12,
+      child: GestureDetector(
+        onTap: () => _showNotificationPopup(context),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(
+              Icons.notifications, 
+              color: Colors.white,
+              size: iconSize,
+            ),
+            if (_unreadCount > 0 && !_isLoading)
+              Positioned(
+                top: -3,
+                right: -3,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  textAlign: TextAlign.center,
+                  constraints: const BoxConstraints(
+                    minWidth: 12,
+                    minHeight: 12,
+                  ),
+                  child: Text(
+                    _unreadCount > 9 ? '9+' : _unreadCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
