@@ -37,14 +37,19 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final appLinks = AppLinks();
 
 void main() async {
-  // Capture toutes les erreurs non gérées
+  // Désactiver les messages de débordement
+  WidgetsFlutterBinding.ensureInitialized();
+  // Désactiver les avertissements de débordement visuels
   FlutterError.onError = (FlutterErrorDetails details) {
+    // Filtre pour ignorer les erreurs de débordement
+    if (details.toString().contains('overflowed')) {
+      return;
+    }
     print('FlutterError: ${details.exception}');
     print('Stack trace: ${details.stack}');
   };
   
   // Initialisation Flutter
-  WidgetsFlutterBinding.ensureInitialized();
   
   // Initialiser les données de locale
   await initializeDateFormatting('fr_FR', null);

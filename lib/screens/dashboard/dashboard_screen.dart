@@ -1061,14 +1061,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           onTap: _navigateToProjectsList,
         ),
         _buildSummaryCard(
-          title: 'Tâches terminées',
+          title: 'Tâches',
           value: '$completedTasks/${_tasksList.length}',
           icon: Icons.task_alt,
           color: Colors.green,
           onTap: _navigateToTasksList,
         ),
         _buildSummaryCard(
-          title: 'Phases terminées',
+          title: 'Phases',
           value: '$inProgressPhases/${_phasesList.length}',
           icon: Icons.checklist_rounded,
           color: Colors.green,
