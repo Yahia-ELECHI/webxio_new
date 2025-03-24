@@ -84,13 +84,18 @@ class _FullscreenCagnotteState extends State<FullscreenCagnotte> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cagnotte en ligne'),
+        title: const Text(
+          'Cagnotte en ligne',
+          overflow: TextOverflow.ellipsis,
+        ),
+        titleSpacing: 0, // Réduire l'espace autour du titre
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
               _controller.reload();
             },
+            padding: EdgeInsets.zero, // Réduire le padding de l'icône
           ),
         ],
       ),
