@@ -37,35 +37,30 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final appLinks = AppLinks();
 
 void main() async {
-  // Désactiver les messages de débordement
-  WidgetsFlutterBinding.ensureInitialized();
-  // Désactiver les avertissements de débordement visuels
+  // Capture toutes les erreurs non gérées
   FlutterError.onError = (FlutterErrorDetails details) {
-    // Filtre pour ignorer les erreurs de débordement
-    if (details.toString().contains('overflowed')) {
-      return;
-    }
     print('FlutterError: ${details.exception}');
     print('Stack trace: ${details.stack}');
   };
-  
+
   // Initialisation Flutter
-  
+  WidgetsFlutterBinding.ensureInitialized();
+
   // Initialiser les données de locale
   await initializeDateFormatting('fr_FR', null);
-  
+
   // Initialiser le service de cache
   await CacheService().initialize();
-  
+
   // Charger les variables d'environnement
   await dotenv.load(fileName: ".env");
-  
+
   // Lancer l'application sans attendre Supabase
   runApp(const MyApp());
-  
+
   // Initialiser Supabase en arrière-plan
   _initializeSupabase();
-  
+
   // Gestion des liens profonds (deep links)
   _handleDeepLinks();
 }
@@ -76,12 +71,12 @@ Future<void> _initializeSupabase() async {
     print("Tentative d'initialisation de Supabase...");
     final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
     final supabaseKey = dotenv.env['SUPABASE_KEY'] ?? '';
-    
+
     if (supabaseUrl.isEmpty || supabaseKey.isEmpty) {
       print("Erreur: URL ou clé Supabase manquante dans le fichier .env");
       return;
     }
-    
+
     await Supabase.initialize(
       url: supabaseUrl,
       anonKey: supabaseKey,
@@ -102,7 +97,7 @@ Future<void> _handleDeepLinks() async {
       print("Lien initial: $initialLink");
       _processLink(initialLink.toString());
     }
-    
+
     // Écouter les liens dynamiques (DynamicLinks)
     appLinks.uriLinkStream.listen((link) {
       print("Lien reçu: $link");
@@ -119,15 +114,15 @@ Future<void> _handleDeepLinks() async {
 void _processLink(String link) {
   try {
     final uri = Uri.parse(link);
-    
+
     if (uri.host == 'invitation' || uri.path == '/invitation') {
       // Extraire les paramètres
       final token = uri.queryParameters['token'] ?? '';
       final teamId = uri.queryParameters['team'] ?? '';
-      
+
       if (token.isNotEmpty && teamId.isNotEmpty) {
         print("Invitation reçue - Token: $token, Team ID: $teamId");
-        
+
         // Accéder au navigateur global
         navigatorKey.currentState?.pushNamed(
           '/invitation',
@@ -210,7 +205,7 @@ class MyApp extends StatelessWidget {
           final args = ModalRoute.of(context)!.settings.arguments as Map<String, String>?;
           final token = args?['token'] ?? Uri.base.queryParameters['token'] ?? '';
           final teamId = args?['team'] ?? Uri.base.queryParameters['team'] ?? '';
-          
+
           // Rediriger vers l'écran d'acceptation d'invitation
           return InvitationAcceptanceScreen(
             token: token,
@@ -296,9 +291,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   repeat: true,
                   animationDuration: Duration(milliseconds: 1500),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
+
                 const Text(
                   'AL MAHIR',
                   style: TextStyle(
@@ -330,7 +325,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
 class MainAppScreen extends StatefulWidget {
   final int initialIndex;
-  
+
   const MainAppScreen({
     super.key,
     this.initialIndex = 0,
@@ -343,7 +338,7 @@ class MainAppScreen extends StatefulWidget {
 class _MainAppScreenState extends State<MainAppScreen> {
   final AuthService _authService = AuthService();
   late int _selectedIndex;
-  
+
   final List<Widget> _screens = [
     const DashboardScreen(),
     const ProjectsScreen(),
@@ -353,23 +348,23 @@ class _MainAppScreenState extends State<MainAppScreen> {
     const ProjectFinanceDashboardScreen(), // Nouveau tableau de bord financier avec sélecteur moderne
     const ProfileScreen(),
   ];
-  
+
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final user = _authService.currentUser;
     final isAuthenticated = user != null;
     final isSmallScreen = MediaQuery.of(context).size.width < 600;
-    
+
     if (!isAuthenticated) {
       return const LoginScreen();
     }
-    
+
     return Scaffold(
       body: isSmallScreen
           ? _screens[_selectedIndex]
@@ -384,7 +379,7 @@ class _MainAppScreenState extends State<MainAppScreen> {
                   },
                   selectedIndex: _selectedIndex,
                 ),
-                
+
                 // Contenu principal
                 Expanded(
                   child: _screens[_selectedIndex],
@@ -449,36 +444,45 @@ class _MainAppScreenState extends State<MainAppScreen> {
             )
           : null,
       appBar: isSmallScreen
-          ? AppBar(
-              title: Transform.translate(
-                offset: const Offset(-35, 0),
-                child: SvgPicture.asset(
-                  'assets/logo/almahir_blanc_texte_v2.svg',
-                  height: 150,
-                  width: 180,
-                ),
-              ),
-              centerTitle: false,
-              backgroundColor: const Color(0xFF1F4E5F),
-              foregroundColor: Colors.white,
-              flexibleSpace: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Opacity(
-                      opacity: 0.09,
-                      child: IslamicPatternBackground(
-                        color: const Color.fromARGB(198, 255, 217, 0), // Couleur dorée
+          ? PreferredSize(
+              preferredSize: const Size.fromHeight(64.0),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+
+                  return AppBar(
+                    toolbarHeight: 60, // Augmenter la hauteur de la barre d'outils
+                    title: Padding(
+                      padding: const EdgeInsets.only(left: 8.0), // Ajouter un peu d'espace à gauche
+                      child: SvgPicture.asset(
+                        'assets/logo/almahir_blanc_texte_v2.svg',
+                        height: 150,
+                        width: 180,
+                        fit: BoxFit.contain,
                       ),
                     ),
-                  ),
-                ],
+                    titleSpacing: 0,
+                    centerTitle: false,
+                    leadingWidth: 36,
+                    backgroundColor: const Color(0xFF1F4E5F),
+                    foregroundColor: Colors.white,
+                    flexibleSpace: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: Opacity(
+                            opacity: 0.09,
+                            child: IslamicPatternBackground(
+                              color: const Color.fromARGB(198, 255, 217, 0),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      NotificationIcon(),
+                    ],
+                  );
+                }
               ),
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 25.0), // Ajouter de l'espace à droite
-                  child: NotificationIcon(),
-                ),
-              ],
             )
           : null,
     );
