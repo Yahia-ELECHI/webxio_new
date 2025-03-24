@@ -984,7 +984,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Adapter la taille du texte en fonction de la largeur disponible
-        final double titleFontSize = constraints.maxWidth < 350 ? 20 : 24;
+        final double titleFontSize = constraints.maxWidth < 350 ? 20 : 20;
         final double subtitleFontSize = constraints.maxWidth < 350 ? 14 : 16;
 
         return Column(
@@ -1102,75 +1102,138 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Adapter la taille des éléments en fonction de la largeur disponible
-        final double availableWidth = constraints.maxWidth;
-        final bool isSmallScreen = availableWidth < 200;
-        final bool isMediumScreen = availableWidth >= 200 && availableWidth < 300;
+    return SummaryCardWidget(
+      title: title,
+      value: value,
+      icon: icon,
+      color: color,
+      onTap: onTap,
+    );
+  }
+}
 
-        // Adapter la taille des éléments
-        final double iconSize = isSmallScreen ? 16 : 20;
-        final double containerSize = isSmallScreen ? 32 : 40;
-        final double fontSize = isSmallScreen ? 11 : (isMediumScreen ? 12 : 14);
-        final double titleFontSize = isSmallScreen ? 10 : (isMediumScreen ? 11 : 12);
+class SummaryCardWidget extends StatefulWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
 
-        return GestureDetector(
-          onTap: onTap,
-          child: Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                children: [
-                  Container(
-                    width: containerSize,
-                    height: containerSize,
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      icon,
-                      color: color,
-                      size: iconSize,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          value,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: fontSize,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          title,
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: titleFontSize,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+  const SummaryCardWidget({
+    Key? key,
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  State<SummaryCardWidget> createState() => _SummaryCardWidgetState();
+}
+
+class _SummaryCardWidgetState extends State<SummaryCardWidget> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // Récupérer la largeur de l'écran pour adapter la taille des éléments
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isSmallScreen = screenWidth < 400;
+    final bool isMediumScreen = screenWidth >= 400 && screenWidth < 600;
+
+    // Adapter la taille des éléments en fonction de la taille de l'écran
+    final double iconSize = isSmallScreen ? 16 : 20;
+    final double containerSize = isSmallScreen ? 32 : 40;
+    final double fontSize = isSmallScreen ? 11 : (isMediumScreen ? 12 : 15);
+    final double titleFontSize = isSmallScreen ? 10 : (isMediumScreen ? 11 : 12);
+    final EdgeInsets padding = isSmallScreen 
+        ? const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0)
+        : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0);
+
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-        );
-      },
+          child: Stack(
+            children: [
+              Padding(
+                padding: padding,
+                child: Row(
+                  children: [
+                    Container(
+                      width: containerSize,
+                      height: containerSize,
+                      decoration: BoxDecoration(
+                        color: widget.color.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        widget.icon,
+                        color: widget.color,
+                        size: iconSize,
+                      ),
+                    ),
+                    SizedBox(width: isSmallScreen ? 8 : 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.value,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: fontSize,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Étiquette transparente qui apparaît lors du clic
+              //if (_isPressed)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 8.0),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(12),
+                        bottomRight: Radius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      widget.title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: titleFontSize,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
