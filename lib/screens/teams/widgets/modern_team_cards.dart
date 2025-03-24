@@ -118,7 +118,7 @@ class ModernTeamCard extends StatelessWidget {
                                       // Optimisation 1: Réduire la vitesse d'animation
                                       velocity: 20.0,
                                       // Optimisation 2: Augmenter la pause entre les cycles
-                                      pauseAfterRound: const Duration(seconds: 20),
+                                      pauseAfterRound: const Duration(seconds: 60),
                                       startPadding: 10.0,
                                       accelerationDuration: const Duration(milliseconds: 500),
                                       accelerationCurve: Curves.linear,

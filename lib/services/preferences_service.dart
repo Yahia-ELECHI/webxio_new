@@ -2,7 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class PreferencesService {
   static const String _cagnotteUrlKey = 'cagnotte_url';
-  static const String _defaultCagnotteUrl = 'https://www.leetchi.com/fr/cagnotte/example';
+  static const String _defaultCagnotteUrl = 'https://www.cotizup.com/apprentissage-du-coran';
 
   // Singleton pattern
   static final PreferencesService _instance = PreferencesService._internal();

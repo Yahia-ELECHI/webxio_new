@@ -25,6 +25,7 @@ import 'widgets/sidebar_menu.dart';
 import 'widgets/islamic_patterns.dart';
 import 'widgets/notification_popup.dart';
 import 'services/auth_service.dart';
+import 'services/cache_service.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:io';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -36,17 +37,25 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final appLinks = AppLinks();
 
 void main() async {
-  // Capture toutes les erreurs non gérées
+  // Désactiver les messages de débordement
+  WidgetsFlutterBinding.ensureInitialized();
+  // Désactiver les avertissements de débordement visuels
   FlutterError.onError = (FlutterErrorDetails details) {
+    // Filtre pour ignorer les erreurs de débordement
+    if (details.toString().contains('overflowed')) {
+      return;
+    }
     print('FlutterError: ${details.exception}');
     print('Stack trace: ${details.stack}');
   };
   
   // Initialisation Flutter
-  WidgetsFlutterBinding.ensureInitialized();
   
   // Initialiser les données de locale
   await initializeDateFormatting('fr_FR', null);
+  
+  // Initialiser le service de cache
+  await CacheService().initialize();
   
   // Charger les variables d'environnement
   await dotenv.load(fileName: ".env");

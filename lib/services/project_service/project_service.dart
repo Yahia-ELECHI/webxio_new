@@ -5,6 +5,7 @@ import '../../models/task_model.dart';
 import '../../models/task_history_model.dart';
 import '../../models/phase_model.dart';
 import '../notification_service.dart';
+import '../cache_service.dart';
 
 class ProjectService {
   final SupabaseClient _client = SupabaseConfig.client;
@@ -13,17 +14,48 @@ class ProjectService {
   final String _phasesTable = 'phases';
   final String _taskHistoryTable = 'task_history';
   final NotificationService _notificationService = NotificationService();
+  final CacheService _cacheService = CacheService();
 
   // Récupérer tous les projets
   Future<List<Project>> getAllProjects() async {
+    // Étape 1: Vérifier si des données en cache sont disponibles
+    List<Project> cachedProjects = [];
+    final cachedData = _cacheService.getCachedProjects();
+    if (cachedData != null) {
+      cachedProjects = cachedData.map((json) => Project.fromJson(json)).toList();
+    }
+    
     try {
-      final response = await _client
-          .from(_projectsTable)
-          .select()
-          .order('created_at', ascending: false);
-      
-      return response.map((json) => Project.fromJson(json)).toList();
+      // Étape 2: Si le cache est vide, attendre la réponse de l'API, sinon retourner le cache immédiatement
+      if (cachedProjects.isEmpty) {
+        final response = await _client
+            .from(_projectsTable)
+            .select()
+            .order('created_at', ascending: false);
+        
+        final projects = response.map((json) => Project.fromJson(json)).toList();
+        
+        // Mettre à jour le cache pour les prochaines fois
+        await _cacheService.cacheProjects(response);
+        
+        return projects;
+      } else {
+        // Étape 3: Retourner les données du cache immédiatement
+        
+        // Étape 4: Déclencher une mise à jour en arrière-plan si le cache n'est plus valide
+        if (!_cacheService.areProjectsCacheValid()) {
+          _refreshProjectsInBackground();
+        }
+        
+        return cachedProjects;
+      }
     } catch (e) {
+      // Si une erreur se produit et que nous avons des données en cache, utilisez-les
+      if (cachedProjects.isNotEmpty) {
+        return cachedProjects;
+      }
+      
+      // Sinon, propager l'erreur
       print('Erreur lors de la récupération des projets: $e');
       rethrow;
     }
@@ -630,6 +662,22 @@ class ProjectService {
     } catch (e) {
       print('Erreur lors de la récupération des statistiques budgétaires: $e');
       rethrow;
+    }
+  }
+
+  // Méthode pour rafraîchir les données en arrière-plan
+  Future<void> _refreshProjectsInBackground() async {
+    try {
+      final response = await _client
+          .from(_projectsTable)
+          .select()
+          .order('created_at', ascending: false);
+      
+      // Mettre à jour le cache
+      await _cacheService.cacheProjects(response);
+    } catch (e) {
+      // Ignorer les erreurs en arrière-plan, juste logger
+      print('Erreur lors du rafraîchissement des projets en arrière-plan: $e');
     }
   }
 
