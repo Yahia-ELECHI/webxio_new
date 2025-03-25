@@ -371,15 +371,16 @@ class ProjectFinanceService {
     String description,
     DateTime transactionDate,
     String category,
-    String? subcategory,
-  ) async {
+    String? subcategory, {
+    String? notes, // Ajout du paramètre notes optionnel
+  }) async {
     try {
       final userId = _supabase.auth.currentUser!.id;
-      final transactionId = _uuid.v4();
       final now = DateTime.now().toUtc();
+      final transactionId = _uuid.v4();
       
-      // Récupérer les noms des entités associées
-      String projectName = 'Projet non spécifié';
+      // Récupérer des informations supplémentaires pour l'affichage
+      String projectName = 'Projet inconnu';
       String? phaseName;
       String? taskName;
       
@@ -468,6 +469,7 @@ class ProjectFinanceService {
         taskName: taskName,
         amount: amount, // Le montant peut être positif ou négatif
         description: description,
+        notes: notes, // Ajout des notes
         transactionDate: transactionDate,
         transactionType: transactionType, // 'income' ou 'expense'
         category: category, // Anciennement subcategory
@@ -487,6 +489,7 @@ class ProjectFinanceService {
         'task_id': jsonData['task_id'],
         'amount': jsonData['amount'],
         'description': jsonData['description'],
+        'notes': jsonData['notes'], // Ajout des notes dans les données
         'transaction_date': jsonData['transaction_date'],
         'transaction_type': jsonData['transaction_type'], // Mise à jour
         'category': jsonData['category'],
@@ -560,6 +563,7 @@ class ProjectFinanceService {
         'task_id': transaction.taskId,
         'amount': transaction.amount,
         'description': transaction.description,
+        'notes': transaction.notes, // Ajout des notes dans la mise à jour
         'transaction_date': transaction.transactionDate.toIso8601String(),
         'transaction_type': transaction.transactionType, // Mise à jour
         'category': transaction.category,

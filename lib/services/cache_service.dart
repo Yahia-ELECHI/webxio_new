@@ -144,6 +144,14 @@ class CacheService {
     return isCacheValid(key);
   }
   
+  // Forcer l'invalidation du cache des projets
+  Future<void> invalidateProjectsCache() async {
+    // Supprimer l'entrée du cache ou mettre la date d'expiration dans le passé
+    _memoryCache.remove(_projectsKey);
+    await _prefs.remove(_projectsKey);
+    await _prefs.remove('${_projectsKey}${_lastUpdateSuffixKey}');
+  }
+  
   // Transactions
   Future<void> cacheTransactions(String? projectId, List<dynamic> transactions) async {
     final key = projectId == null ? _transactionsKey : '${_transactionsKey}_$projectId';

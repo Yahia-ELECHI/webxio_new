@@ -33,7 +33,17 @@ class ProjectService {
             .select()
             .order('created_at', ascending: false);
         
+        // Vérifier si planned_budget est présent dans les données brutes
+        for (var projectJson in response) {
+          print('Projet brut depuis Supabase: ${projectJson['name']}, PlannedBudget: ${projectJson['planned_budget']}');
+        }
+        
         final projects = response.map((json) => Project.fromJson(json)).toList();
+        
+        // Vérifier si planned_budget est correctement converti dans les objets Dart
+        for (var project in projects) {
+          print('Projet: ${project.name}, PlannedBudget: ${project.plannedBudget}');
+        }
         
         // Mettre à jour le cache pour les prochaines fois
         await _cacheService.cacheProjects(response);
@@ -174,6 +184,15 @@ class ProjectService {
             updatedProject.status == 'cancelled') {
           await _notifyProjectStatusChange(updatedProject);
         }
+      }
+      
+      // Vérifier si le budget prévu a changé
+      if (oldProject != null && oldProject.plannedBudget != updatedProject.plannedBudget) {
+        // Forcer l'invalidation du cache des projets pour que les changements soient visibles immédiatement
+        print('Budget prévu modifié pour ${updatedProject.name}: ${oldProject.plannedBudget} → ${updatedProject.plannedBudget}');
+        
+        // Utiliser la nouvelle méthode pour invalider le cache des projets
+        await _cacheService.invalidateProjectsCache();
       }
       
       // Vérifier si le budget a changé
@@ -662,6 +681,34 @@ class ProjectService {
     } catch (e) {
       print('Erreur lors de la récupération des statistiques budgétaires: $e');
       rethrow;
+    }
+  }
+
+  // Récupérer le budget planifié d'un projet directement depuis la base de données (sans cache)
+  Future<double> getProjectPlannedBudget(String projectId) async {
+    try {
+      // Requête directe à Supabase pour récupérer uniquement le champ planned_budget
+      final response = await _client
+          .from(_projectsTable)
+          .select('planned_budget')
+          .eq('id', projectId)
+          .single();
+      
+      print('Budget planifié récupéré directement depuis Supabase: ${response['planned_budget']}');
+      
+      // Convertir la valeur en double
+      if (response['planned_budget'] != null) {
+        if (response['planned_budget'] is int) {
+          return (response['planned_budget'] as int).toDouble();
+        } else {
+          return response['planned_budget'] as double;
+        }
+      }
+      
+      return 0.0; // Valeur par défaut si le budget n'est pas défini
+    } catch (e) {
+      print('Erreur lors de la récupération du budget planifié: $e');
+      return 0.0; // Valeur par défaut en cas d'erreur
     }
   }
 

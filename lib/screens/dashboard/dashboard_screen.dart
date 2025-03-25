@@ -122,10 +122,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _tasksMap = {for (var task in _tasksList) task.id: task};
 
           // Mise à jour des graphiques avec les données disponibles
-          _prepareAllChartData();
-
-          // Montrer tout de suite que le chargement est terminé
-          _isLoading = false;
+          _isLoading = false; // Marquer comme chargé avant de préparer les graphiques (pour afficher l'UI)
+          
+          // Lancer la préparation des graphiques de manière asynchrone
+          _prepareAllChartData().then((_) {
+            // Rafraîchir l'UI quand les données du budget planifié sont prêtes
+            if (mounted) setState(() {});
+          });
         });
 
         // 2. Continuer le chargement en arrière-plan (sans bloquer l'UI)
@@ -194,7 +197,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       // Préparation des données pour les charts et widgets
-      _prepareAllChartData();
+      await _prepareAllChartData();
 
     } catch (e) {
       print('Erreur lors du chargement complet des données: $e');
@@ -254,7 +257,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _tasksMap = {for (var task in _tasksList) task.id: task};
 
           // Préparer toutes les données pour les graphiques
-          _prepareAllChartData();
+          _prepareAllChartData().then((_) {
+            // Rafraîchir l'UI quand les données du budget planifié sont prêtes
+            if (mounted) setState(() {});
+          });
         });
 
         // Charger l'historique des tâches en arrière-plan et mettre à jour l'interface
@@ -314,10 +320,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // Prépare toutes les données pour les graphiques et widgets
-  void _prepareAllChartData() {
+  Future<void> _prepareAllChartData() async {
     _prepareTasksByStatusData(_tasksList);
     _prepareTasksByPriorityData(_tasksList);
-    _prepareProjectProgressData(_projectsList, _phasesList, _tasksList);
+    await _prepareProjectProgressData(_projectsList, _phasesList, _tasksList);
     _prepareUpcomingTasksData(_tasksList);
     _preparePhaseProgressData(_phasesList, _tasksList);
     _prepareBudgetOverviewData(_projectsList);
@@ -366,9 +372,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }).toList();
   }
 
-  void _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks) {
-    _projectProgressData = projects.map((project) {
-
+  Future<void> _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks) async {
+    // Liste temporaire pour stocker les résultats
+    final List<ProjectProgressData> tempData = [];
+    
+    // Traiter chaque projet
+    for (var project in projects) {
       // Calcul du pourcentage de progression
       final projectPhases = phases.where((phase) => phase.projectId == project.id).toList();
       final projectTasks = tasks.where((task) => task.projectId == project.id).toList();
@@ -384,6 +393,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
       double budgetUsagePercentage = 0;
+      double plannedBudgetUsagePercentage = 0; // Nouveau pourcentage par rapport au budget prévu
+      double usedBudget = 0; // Montant des dépenses utilisé pour les deux calculs
+      double totalRevenues = 0; // Montant des revenus (budget réel)
+
+      // Récupérer le budget planifié directement depuis la base de données (sans cache)
+      double plannedBudget = await _projectService.getProjectPlannedBudget(project.id);
+      print('Budget planifié pour ${project.name} récupéré directement: $plannedBudget');
 
       if (_projectTransactionsList.isNotEmpty) {
         final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
@@ -391,12 +407,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Si on a trouvé des transactions pour ce projet, calculer le pourcentage d'utilisation
         if (projectTransactions.isNotEmpty) {
           // Calculer les dépenses (expenses)
-          double usedBudget = projectTransactions
+          usedBudget = projectTransactions
               .where((tx) => !tx.isIncome)
               .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
 
           // Calculer les revenus (income)
-          double totalRevenues = projectTransactions
+          totalRevenues = projectTransactions
               .where((tx) => tx.isIncome)
               .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
 
@@ -406,18 +422,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
           } else if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
             // Sinon, utiliser le budget alloué comme référence si disponible
             budgetUsagePercentage = (usedBudget / project.budgetAllocated!) * 100;
+            totalRevenues = project.budgetAllocated ?? 0; // Utiliser le budget alloué comme total des revenus
           } else {
             // Si pas de revenus et pas de budget alloué, montrer le pourcentage en fonction des dépenses
             budgetUsagePercentage = usedBudget > 0 ? 100 : 0; // Si des dépenses existent sans revenus ni budget, 100%
+            totalRevenues = usedBudget; // Par défaut, les revenus égalent les dépenses (budget consommé à 100%)
           }
           budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
+          
+          // Calcul du pourcentage par rapport au budget prévu (statique)
+          if (plannedBudget > 0) {
+            plannedBudgetUsagePercentage = (usedBudget / plannedBudget) * 100;
+            plannedBudgetUsagePercentage = plannedBudgetUsagePercentage.clamp(0, 100);
+          } else {
+            plannedBudgetUsagePercentage = 0;
+          }
         } else {
           // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
           budgetUsagePercentage = project.budgetUsagePercentage;
+          
+          // Calculer le pourcentage par rapport au budget prévu
+          if (plannedBudget > 0 && project.budgetConsumed != null) {
+            plannedBudgetUsagePercentage = (project.budgetConsumed! / plannedBudget) * 100;
+            plannedBudgetUsagePercentage = plannedBudgetUsagePercentage.clamp(0, 100);
+          } else {
+            plannedBudgetUsagePercentage = 0;
+          }
+          
+          // Utiliser les valeurs par défaut du projet
+          if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
+            totalRevenues = project.budgetAllocated!;
+          }
+          if (project.budgetConsumed != null) {
+            usedBudget = project.budgetConsumed!;
+          }
         }
       } else {
         // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
         budgetUsagePercentage = project.budgetUsagePercentage;
+        
+        // Calculer le pourcentage par rapport au budget prévu
+        if (plannedBudget > 0 && project.budgetConsumed != null) {
+          plannedBudgetUsagePercentage = (project.budgetConsumed! / plannedBudget) * 100;
+          plannedBudgetUsagePercentage = plannedBudgetUsagePercentage.clamp(0, 100);
+        } else {
+          plannedBudgetUsagePercentage = 0;
+        }
+        
+        // Utiliser les valeurs par défaut du projet
+        if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
+          totalRevenues = project.budgetAllocated!;
+        }
+        if (project.budgetConsumed != null) {
+          usedBudget = project.budgetConsumed!;
+        }
       }
 
       // Déterminer la couleur en fonction du pourcentage d'utilisation
@@ -430,14 +488,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         budgetStatusColor = Colors.red; // Plus de 75% : rouge
       }
 
-      return ProjectProgressData(
+      // Ajouter à la liste temporaire
+      tempData.add(ProjectProgressData(
         projectName: project.name,
         projectId: project.id,
         progressPercentage: progressPercentage,
         budgetUsagePercentage: budgetUsagePercentage,
+        plannedBudgetUsagePercentage: plannedBudgetUsagePercentage,
+        budgetAmount: totalRevenues,
+        plannedBudgetAmount: plannedBudget, 
+        usedBudgetAmount: usedBudget,
         progressColor: _getProgressColor(progressPercentage),
-      );
-    }).toList();
+      ));
+    }
+    
+    // Mettre à jour la liste finale
+    setState(() {
+      _projectProgressData = tempData;
+    });
   }
 
   void _prepareUpcomingTasksData(List<Task> tasks) {
@@ -572,7 +640,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (_projectTransactionsList.isNotEmpty) {
           final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
 
-          // Si on a trouvé des transactions pour ce projet, calculer le montant utilisé
+          // Si on a trouvé des transactions pour ce projet, calculer le pourcentage d'utilisation
           if (projectTransactions.isNotEmpty) {
             // Calculer les dépenses (expenses)
             usedBudget = projectTransactions
@@ -853,10 +921,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _refreshDashboard() async {
-    await _loadDashboardData();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Tableau de bord actualisé')),
-    );
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      await _loadFullData();
+    } catch (e) {
+      print('Erreur lors du rafraîchissement des données: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors du rafraîchissement des données: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   void _showProjectSelector() {

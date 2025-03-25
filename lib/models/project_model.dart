@@ -10,6 +10,7 @@ class Project {
   final String status;
   final double? budgetAllocated;
   final double? budgetConsumed;
+  final double? plannedBudget;
 
   Project({
     required this.id,
@@ -21,6 +22,7 @@ class Project {
     required this.status,
     this.budgetAllocated = 0,
     this.budgetConsumed = 0,
+    this.plannedBudget = 0,
   });
 
   // Convertir un objet JSON en objet Project
@@ -45,6 +47,11 @@ class Project {
               ? (json['budget_consumed'] as int).toDouble()
               : json['budget_consumed'] as double)
           : 0,
+      plannedBudget: json['planned_budget'] != null
+          ? (json['planned_budget'] is int 
+              ? (json['planned_budget'] as int).toDouble()
+              : json['planned_budget'] as double)
+          : 0,
     );
   }
 
@@ -60,6 +67,7 @@ class Project {
       'status': status,
       'budget_allocated': budgetAllocated,
       'budget_consumed': budgetConsumed,
+      'planned_budget': plannedBudget,
     };
   }
 
@@ -74,6 +82,7 @@ class Project {
     String? status,
     double? budgetAllocated,
     double? budgetConsumed,
+    double? plannedBudget,
   }) {
     return Project(
       id: id ?? this.id,
@@ -85,6 +94,7 @@ class Project {
       status: status ?? this.status,
       budgetAllocated: budgetAllocated ?? this.budgetAllocated,
       budgetConsumed: budgetConsumed ?? this.budgetConsumed,
+      plannedBudget: plannedBudget ?? this.plannedBudget,
     );
   }
 

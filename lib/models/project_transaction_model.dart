@@ -10,6 +10,7 @@ class ProjectTransaction {
   final String? taskName;     
   final double amount;
   final String description;
+  final String? notes; 
   final DateTime transactionDate;
   final String transactionType; 
   final String category; 
@@ -28,6 +29,7 @@ class ProjectTransaction {
     this.taskName,
     required this.amount,
     required this.description,
+    this.notes, 
     required this.transactionDate,
     required this.transactionType,
     required this.category,
@@ -51,6 +53,7 @@ class ProjectTransaction {
           ? (json['amount'] as int).toDouble()
           : json['amount'] as double,
       description: json['description'] as String,
+      notes: json['notes'] as String?, 
       transactionDate: DateTime.parse(json['transaction_date'] as String),
       transactionType: json['transaction_type'] as String, 
       category: json['category'] as String,
@@ -75,6 +78,7 @@ class ProjectTransaction {
       'task_name': taskName,
       'amount': amount,
       'description': description,
+      'notes': notes, 
       'transaction_date': transactionDate.toIso8601String(),
       'transaction_type': transactionType, 
       'category': category,
@@ -96,6 +100,7 @@ class ProjectTransaction {
     String? taskName,
     double? amount,
     String? description,
+    String? notes, 
     DateTime? transactionDate,
     String? transactionType, 
     String? category,
@@ -114,6 +119,7 @@ class ProjectTransaction {
       taskName: taskName ?? this.taskName,
       amount: amount ?? this.amount,
       description: description ?? this.description,
+      notes: notes ?? this.notes, 
       transactionDate: transactionDate ?? this.transactionDate,
       transactionType: transactionType ?? this.transactionType, 
       category: category ?? this.category,
@@ -163,6 +169,7 @@ class ProjectTransaction {
           ? (json['amount'] as int).toDouble()
           : json['amount'] as double,
       description: json['description'] as String,
+      notes: json['notes'] as String?, 
       transactionDate: DateTime.parse(json['transaction_date'] as String),
       transactionType: json['transaction_type'] as String, 
       category: json['category'] as String,

@@ -34,6 +34,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
+  final _notesController = TextEditingController(); // Nouveau contrôleur pour les notes additionnelles
   final _projectFinanceService = ProjectFinanceService();
   final _projectService = ProjectService();
   
@@ -87,6 +88,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     if (_isEditing) {
       _descriptionController.text = widget.transaction!.description;
       _amountController.text = widget.transaction!.amount.abs().toString();
+      _notesController.text = widget.transaction!.notes ?? ''; // Initialiser les notes si elles existent
       _isIncomeTransaction = widget.transaction!.transactionType == 'income';
       _transactionDate = widget.transaction!.transactionDate;
       _selectedProjectId = widget.transaction!.projectId;
@@ -165,6 +167,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   void dispose() {
     _descriptionController.dispose();
     _amountController.dispose();
+    _notesController.dispose(); // Disposer le contrôleur des notes
     super.dispose();
   }
 
@@ -176,6 +179,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
 
       try {
         final description = _descriptionController.text.trim();
+        final notes = _notesController.text.trim();
         double amount = double.parse(_amountController.text.replaceAll(',', '.'));
         if (!_isIncomeTransaction) {
           amount = -amount; // Montant négatif pour les dépenses
@@ -185,6 +189,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
           // Mettre à jour la transaction existante
           final updatedTransaction = widget.transaction!.copyWith(
             description: description,
+            notes: notes, // Ajouter les notes
             amount: amount,
             transactionType: _isIncomeTransaction ? 'income' : 'expense',
             category: _selectedCategory,
@@ -215,6 +220,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
             _transactionDate,
             _selectedCategory,
             _selectedSubcategory,
+            notes: notes, // Ajouter les notes
           );
           
           if (!mounted) return;
@@ -328,6 +334,18 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                         }
                         return null;
                       },
+                    ),
+                    const SizedBox(height: 16),
+                    // Notes additionnelles
+                    TextFormField(
+                      controller: _notesController,
+                      decoration: const InputDecoration(
+                        labelText: 'Notes additionnelles',
+                        hintText: 'Informations complémentaires (optionnel)',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.note),
+                      ),
+                      maxLines: 3,
                     ),
                     const SizedBox(height: 16),
                     // Montant
