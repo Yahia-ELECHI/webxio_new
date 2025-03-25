@@ -321,13 +321,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Prépare toutes les données pour les graphiques et widgets
   Future<void> _prepareAllChartData() async {
-    _prepareTasksByStatusData(_tasksList);
-    _prepareTasksByPriorityData(_tasksList);
-    await _prepareProjectProgressData(_projectsList, _phasesList, _tasksList);
-    _prepareUpcomingTasksData(_tasksList);
-    _preparePhaseProgressData(_phasesList, _tasksList);
+    // Préfiltrer les données si un projet spécifique est sélectionné
+    List<Task> filteredTasks = _tasksList;
+    List<Phase> filteredPhases = _phasesList;
+    List<ProjectTransaction> filteredTransactions = _projectTransactionsList;
+    
+    // Si un projet spécifique est sélectionné, filtrer toutes les données
+    if (!_showAllProjects && _selectedProjectId != null) {
+      // Filtrer les tâches du projet sélectionné
+      filteredTasks = _tasksList.where((task) => task.projectId == _selectedProjectId).toList();
+      // Filtrer les phases du projet sélectionné
+      filteredPhases = _phasesList.where((phase) => phase.projectId == _selectedProjectId).toList();
+      // Filtrer les transactions du projet sélectionné
+      filteredTransactions = _projectTransactionsList.where((tx) => tx.projectId == _selectedProjectId).toList();
+      
+      print('Projet sélectionné: $_selectedProjectId - Filtrage appliqué');
+      print('Tâches filtrées: ${filteredTasks.length}/${_tasksList.length}');
+      print('Phases filtrées: ${filteredPhases.length}/${_phasesList.length}');
+      print('Transactions filtrées: ${filteredTransactions.length}/${_projectTransactionsList.length}');
+    } else {
+      print('Tous les projets sont sélectionnés - Aucun filtrage appliqué');
+    }
+
+    _prepareTasksByStatusData(filteredTasks);
+    _prepareTasksByPriorityData(filteredTasks);
+    await _prepareProjectProgressData(_projectsList, filteredPhases, filteredTasks);
+    _prepareUpcomingTasksData(filteredTasks);
+    _preparePhaseProgressData(filteredPhases, filteredTasks);
     _prepareBudgetOverviewData(_projectsList);
-    _prepareRecentTransactionsData(_projectTransactionsList);
+    _prepareRecentTransactionsData(filteredTransactions);
   }
 
   void _prepareTasksByStatusData(List<Task> tasks) {
@@ -617,9 +639,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _prepareBudgetOverviewData(List<Project> projects) {
+    // Si un projet spécifique est sélectionné, ne garder que ce projet
+    List<Project> relevantProjects = projects;
+    if (!_showAllProjects && _selectedProjectId != null) {
+      relevantProjects = projects.where((project) => project.id == _selectedProjectId).toList();
+    }
 
     // Filtrer les projets avec un budget alloué ou des transactions
-    List<Project> relevantProjects = projects.where((project) {
+    relevantProjects = relevantProjects.where((project) {
       // Vérifier si le projet a un budget alloué
       bool hasBudget = project.budgetAllocated != null && project.budgetAllocated! > 0;
 
@@ -632,7 +659,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _budgetOverviewData = relevantProjects
       .map((project) {
-
         // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
         double usedBudget = 0;
         double budgetUsagePercentage = 0;
@@ -1128,14 +1154,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildSummaryCards() {
+    // Filtrer les données en fonction du projet sélectionné
+    List<Task> filteredTasks = _tasksList;
+    List<Phase> filteredPhases = _phasesList;
+    List<Project> relevantProjects = _projectsList;
+    
+    if (!_showAllProjects && _selectedProjectId != null) {
+      filteredTasks = _tasksList.where((task) => task.projectId == _selectedProjectId).toList();
+      filteredPhases = _phasesList.where((phase) => phase.projectId == _selectedProjectId).toList();
+      relevantProjects = _projectsList.where((project) => project.id == _selectedProjectId).toList();
+    }
+
     // Calculer le nombre de tâches terminées
-    final int completedTasks = _tasksList.where((task) =>
+    final int completedTasks = filteredTasks.where((task) =>
       task.status.toLowerCase() == 'completed' ||
       task.status.toLowerCase() == 'terminée'
     ).length;
 
     // Calculer le nombre de phases en cours
-    final int inProgressPhases = _phasesList.where((phase) =>
+    final int inProgressPhases = filteredPhases.where((phase) =>
       phase.status.toLowerCase() == 'completed' ||
       phase.status.toLowerCase() == 'terminée'
     ).length;
@@ -1152,21 +1189,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         _buildSummaryCard(
           title: 'Total Projets',
-          value: _projectsList.length.toString(),
+          value: relevantProjects.length.toString(),
           icon: Icons.folder,
           color: Colors.blue,
           onTap: _navigateToProjectsList,
         ),
         _buildSummaryCard(
           title: 'Tâches',
-          value: '$completedTasks/${_tasksList.length}',
+          value: '$completedTasks/${filteredTasks.length}',
           icon: Icons.task_alt,
           color: Colors.green,
           onTap: _navigateToTasksList,
         ),
         _buildSummaryCard(
           title: 'Phases',
-          value: '$inProgressPhases/${_phasesList.length}',
+          value: '$inProgressPhases/${filteredPhases.length}',
           icon: Icons.checklist_rounded,
           color: Colors.green,
           onTap: _navigateToPhasesList,
