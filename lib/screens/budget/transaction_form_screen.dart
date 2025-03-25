@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/project_model.dart';
 import '../../models/phase_model.dart';
 import '../../models/task_model.dart';
 import '../../models/project_transaction_model.dart';
+import '../../models/transaction_category_model.dart';
+import '../../models/transaction_subcategory_model.dart';
 import '../../services/project_finance_service.dart';
 import '../../services/project_service/project_service.dart';
+import '../../services/transaction_category_service.dart';
+import '../../services/transaction_subcategory_service.dart';
 import '../../utils/snackbar_helper.dart';
 import '../../utils/constants.dart';
+import 'categories/transaction_categories_screen.dart';
 
 class TransactionFormScreen extends StatefulWidget {
   final ProjectTransaction? transaction; // Si null, c'est une nouvelle transaction
@@ -34,50 +40,30 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
-  final _notesController = TextEditingController(); // Nouveau contrôleur pour les notes additionnelles
+  final _notesController = TextEditingController(); 
   final _projectFinanceService = ProjectFinanceService();
   final _projectService = ProjectService();
+  final _categoryService = TransactionCategoryService(Supabase.instance.client);
+  final _subcategoryService = TransactionSubcategoryService(Supabase.instance.client);
   
   bool _isEditing = false;
   bool _isLoading = false;
+  bool _isCategoriesLoading = false;
   bool _isIncomeTransaction = true;
   
   DateTime _transactionDate = DateTime.now();
   String? _selectedProjectId;
   String? _selectedPhaseId;
   String? _selectedTaskId;
-  String _selectedCategory = 'Autre';
-  String? _selectedSubcategory;
+  TransactionCategory? _selectedCategory;
+  TransactionSubcategory? _selectedSubcategory;
   
   List<Project> _projects = [];
   List<Phase> _phases = [];
   List<Task> _tasks = [];
-  final Map<String, List<String>> _categories = {
-    'Don Joumoua': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Événement caritatif', 'Autre'],
-    'Don': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Événement caritatif', 'Autre'],
-    'Don Tarawih': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Collecte spéciale', 'Autre'],
-    'Don Ramadan': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Zakat Al-Fitr', 'Autre'],
-    'Don Aïd': ['Particulier', 'Association', 'Entreprise', 'Anonyme', 'Qurbani', 'Autre'],
-    'Virement': ['Mensuel', 'Ponctuel', 'International', 'Interne', 'Autre'],
-    'Vente de livres': ['Religieux', 'Éducatifs', 'Culturels', 'Numériques', 'Autre'],
-    'Cours en ligne': ['Formation Tajwid', 'Formation Fikh', 'Webinaire', 'Atelier virtuel', 'Autre'],
-    'Cagnotte en ligne': ['Projet spécifique', 'Urgence', 'Événement', 'Campagne annuelle', 'Autre'],
-    'Waqf': ['Immobilier', 'Mobilier', 'Financier', 'Autre'],
-    'Remboursement': ['Avance', 'Trop-perçu', 'Assurance', 'Fournisseur', 'Autre'],
-    'Dotation': ['Fondation', 'Institution', 'Gouvernementale', 'Autre'],
-    'Subvention': ['Publique', 'Privée', 'Européenne', 'Locale', 'Nationale', 'Autre'],
-    'Construction': ['Terrassement', 'Fondations', 'Gros œuvre', 'Second œuvre', 'Toiture', 'Façades', 'Aménagements extérieurs', 'Équipements techniques', 'Finitions', 'Mobilier', 'Honoraires architecte', 'Études techniques', 'Permis et autorisations', 'Autre'],
-    'Éducatif': ['Matériel pédagogique', 'Bibliothèque', 'Équipement multimédia', 'Fournitures scolaires', 'Livres religieux', 'Formation enseignants', 'Activités parascolaires', 'Autre'],
-    'Ressources': ['Matériel', 'Licences logicielles', 'Formation', 'Services externes', 'Équipements spécialisés', 'Autre'],
-    'Personnel': ['Salaires', 'Primes', 'Freelance', 'Consultants', 'Corps enseignant', 'Personnel administratif', 'Agents d\'entretien', 'Autre'],
-    'Marketing': ['Publicité', 'Relations publiques', 'Événements', 'Supports marketing', 'Journées portes ouvertes', 'Communication digitale', 'Autre'],
-    'Opérations': ['Location', 'Utilities', 'Assurances', 'Maintenance', 'Entretien bâtiment', 'Sécurité', 'Autre'],
-    'Finance': ['Taxes', 'Frais bancaires', 'Intérêts', 'Assurances spécifiques', 'Autre'],
-    'Autre': ['Divers'],
-  };
-  List<String> _subcategories = [];
-  List<String> _entriesCategories = ['Don', 'Don Joumoua', 'Don Tarawih', 'Don Ramadan', 'Don Aïd', 'Virement', 'Vente de livres', 'Cours en ligne', 'Cagnotte en ligne', 'Waqf', 'Remboursement', 'Dotation', 'Subvention'];
-  List<String> _expensesCategories = ['Construction', 'Éducatif', 'Ressources', 'Personnel', 'Marketing', 'Opérations', 'Finance', 'Autre'];
+  List<TransactionCategory> _incomeCategories = [];
+  List<TransactionCategory> _expenseCategories = [];
+  List<TransactionSubcategory> _subcategories = [];
 
   @override
   void initState() {
@@ -88,36 +74,135 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     if (_isEditing) {
       _descriptionController.text = widget.transaction!.description;
       _amountController.text = widget.transaction!.amount.abs().toString();
-      _notesController.text = widget.transaction!.notes ?? ''; // Initialiser les notes si elles existent
+      _notesController.text = widget.transaction!.notes ?? '';
       _isIncomeTransaction = widget.transaction!.transactionType == 'income';
       _transactionDate = widget.transaction!.transactionDate;
       _selectedProjectId = widget.transaction!.projectId;
       _selectedPhaseId = widget.transaction!.phaseId;
       _selectedTaskId = widget.transaction!.taskId;
-      
-      // Définir la catégorie à partir du modèle mis à jour
-      _selectedCategory = widget.transaction!.category;
-      _selectedSubcategory = widget.transaction!.subcategory;
-      
-      // Initialiser les sous-catégories en fonction de la catégorie sélectionnée
-      _updateSubcategories(_selectedCategory);
     } else {
       _selectedProjectId = widget.initialProjectId ?? widget.projectId;
       _selectedPhaseId = widget.phaseId;
       _selectedTaskId = widget.taskId;
-      _updateSubcategories(_isIncomeTransaction ? 'Don' : 'Ressources');
     }
+    
     _loadProjects();
+    _loadCategories();
   }
 
-  // Méthode pour trouver la catégorie principale correspondant à une sous-catégorie
-  String _getCategoryForSubcategory(String subcategory) {
-    for (var entry in _categories.entries) {
-      if (entry.value.contains(subcategory)) {
-        return entry.key;
-      }
+  Future<void> _loadCategories() async {
+    setState(() {
+      _isCategoriesLoading = true;
+    });
+
+    try {
+      // Charger les catégories de revenu
+      final incomeCategories = await _categoryService.getCategoriesByType('income');
+      
+      // Charger les catégories de dépenses
+      final expenseCategories = await _categoryService.getCategoriesByType('expense');
+
+      setState(() {
+        _incomeCategories = incomeCategories;
+        _expenseCategories = expenseCategories;
+        
+        // Sélectionner la première catégorie par défaut si nous n'éditons pas une transaction existante
+        if (!_isEditing) {
+          if (_isIncomeTransaction && _incomeCategories.isNotEmpty) {
+            _selectedCategory = _incomeCategories.first;
+          } else if (!_isIncomeTransaction && _expenseCategories.isNotEmpty) {
+            _selectedCategory = _expenseCategories.first;
+          }
+          
+          // Charger les sous-catégories pour la catégorie sélectionnée
+          if (_selectedCategory != null) {
+            _loadSubcategories(_selectedCategory!.id);
+          }
+        } else {
+          // Si nous éditons une transaction existante, retrouver la catégorie et sous-catégorie
+          _findAndSetCategoryAndSubcategory();
+        }
+        
+        _isCategoriesLoading = false;
+      });
+    } catch (e) {
+      print('Erreur lors du chargement des catégories: ${e.toString()}');
+      SnackBarHelper.showErrorSnackBar(
+        context, 
+        'Erreur lors du chargement des catégories: ${e.toString()}'
+      );
+      setState(() {
+        _isCategoriesLoading = false;
+      });
     }
-    return 'Autre';
+  }
+  
+  Future<void> _findAndSetCategoryAndSubcategory() async {
+    if (widget.transaction == null) return;
+    
+    try {
+      // Rechercher la catégorie par son nom
+      final categories = _isIncomeTransaction ? _incomeCategories : _expenseCategories;
+      final matchingCategory = categories.firstWhere(
+        (cat) => cat.name == widget.transaction!.category,
+        orElse: () => categories.isNotEmpty ? categories.first : TransactionCategory(
+          id: 'default',
+          name: 'Autre',
+          transactionType: _isIncomeTransaction ? 'income' : 'expense',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+      
+      setState(() {
+        _selectedCategory = matchingCategory;
+      });
+      
+      // Charger les sous-catégories pour cette catégorie
+      await _loadSubcategories(_selectedCategory!.id);
+      
+      // Rechercher la sous-catégorie par son nom
+      if (widget.transaction!.subcategory != null) {
+        final matchingSubcategory = _subcategories.firstWhere(
+          (subcat) => subcat.name == widget.transaction!.subcategory,
+          orElse: () => _subcategories.isNotEmpty ? _subcategories.first : _createDefaultSubcategory(_selectedCategory!.id),
+        );
+        
+        setState(() {
+          _selectedSubcategory = matchingSubcategory;
+        });
+      }
+    } catch (e) {
+      print('Erreur lors de la recherche de catégorie: ${e.toString()}');
+    }
+  }
+
+  Future<void> _loadSubcategories(String categoryId) async {
+    setState(() {
+      _isCategoriesLoading = true;
+    });
+
+    try {
+      final subcategories = await _subcategoryService.getSubcategoriesByCategory(categoryId);
+      
+      setState(() {
+        _subcategories = subcategories;
+        // Sélectionner la première sous-catégorie par défaut
+        if (_subcategories.isNotEmpty) {
+          _selectedSubcategory = _subcategories.first;
+        } else {
+          _selectedSubcategory = null;
+        }
+        _isCategoriesLoading = false;
+      });
+    } catch (e) {
+      print('Erreur lors du chargement des sous-catégories: ${e.toString()}');
+      setState(() {
+        _subcategories = [];
+        _selectedSubcategory = null;
+        _isCategoriesLoading = false;
+      });
+    }
   }
 
   Future<void> _loadProjects() async {
@@ -155,11 +240,28 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     }
   }
 
-  void _updateSubcategories(String category) {
+  void _updateTransactionType(bool isIncome) {
+    if (_isIncomeTransaction == isIncome) return;
+    
     setState(() {
-      _selectedCategory = category;
-      _subcategories = _categories[category] ?? [];
-      _selectedSubcategory = _subcategories.isNotEmpty ? _subcategories.first : null;
+      _isIncomeTransaction = isIncome;
+      
+      // Changer la sélection de catégorie en fonction du type de transaction
+      if (_isIncomeTransaction && _incomeCategories.isNotEmpty) {
+        _selectedCategory = _incomeCategories.first;
+      } else if (!_isIncomeTransaction && _expenseCategories.isNotEmpty) {
+        _selectedCategory = _expenseCategories.first;
+      } else {
+        _selectedCategory = null;
+      }
+      
+      // Charger les sous-catégories pour la nouvelle catégorie sélectionnée
+      if (_selectedCategory != null) {
+        _loadSubcategories(_selectedCategory!.id);
+      } else {
+        _subcategories = [];
+        _selectedSubcategory = null;
+      }
     });
   }
 
@@ -167,7 +269,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   void dispose() {
     _descriptionController.dispose();
     _amountController.dispose();
-    _notesController.dispose(); // Disposer le contrôleur des notes
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -189,16 +291,18 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
           // Mettre à jour la transaction existante
           final updatedTransaction = widget.transaction!.copyWith(
             description: description,
-            notes: notes, // Ajouter les notes
+            notes: notes,
             amount: amount,
             transactionType: _isIncomeTransaction ? 'income' : 'expense',
-            category: _selectedCategory,
-            subcategory: _selectedSubcategory,
+            category: _selectedCategory?.name ?? 'Autre',
+            subcategory: _selectedSubcategory?.name,
             projectId: _selectedProjectId,
             phaseId: _selectedPhaseId,
             taskId: _selectedTaskId,
             transactionDate: _transactionDate,
             updatedAt: DateTime.now(),
+            categoryId: _selectedCategory?.id,
+            subcategoryId: _selectedSubcategory?.id,
           );
           
           await _projectFinanceService.updateTransaction(updatedTransaction);
@@ -218,9 +322,9 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
             amount,
             description,
             _transactionDate,
-            _selectedCategory,
-            _selectedSubcategory,
-            notes: notes, // Ajouter les notes
+            _selectedCategory?.name ?? 'Autre',
+            _selectedSubcategory?.name,
+            notes: notes,
           );
           
           if (!mounted) return;
@@ -261,6 +365,17 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     }
   }
 
+  // Méthode utilitaire pour créer une sous-catégorie par défaut
+  TransactionSubcategory _createDefaultSubcategory(String categoryId) {
+    return TransactionSubcategory(
+      id: 'default',
+      categoryId: categoryId,
+      name: 'Autre',
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -296,7 +411,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               setState(() {
                                 _isIncomeTransaction = value!;
                                 // Mettre à jour les catégories disponibles
-                                _updateSubcategories(_isIncomeTransaction ? 'Don' : 'Ressources');
+                                _updateTransactionType(_isIncomeTransaction);
                               });
                             },
                             activeColor: Colors.green,
@@ -311,7 +426,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               setState(() {
                                 _isIncomeTransaction = value!;
                                 // Mettre à jour les catégories disponibles
-                                _updateSubcategories(_isIncomeTransaction ? 'Don' : 'Ressources');
+                                _updateTransactionType(_isIncomeTransaction);
                               });
                             },
                             activeColor: Colors.red,
@@ -398,37 +513,68 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Catégorie
-                    DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        labelText: 'Catégorie',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.category),
-                      ),
-                      value: _selectedCategory,
-                      items: (_isIncomeTransaction ? _entriesCategories : _expensesCategories)
-                          .map((category) {
-                        return DropdownMenuItem<String>(
-                          value: category,
-                          child: Text(category),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          _updateSubcategories(value);
-                        }
-                      },
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Veuillez sélectionner une catégorie';
-                        }
-                        return null;
-                      },
+                    // Catégorie avec bouton de gestion
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<TransactionCategory>(
+                            decoration: const InputDecoration(
+                              labelText: 'Catégorie',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.category),
+                            ),
+                            value: _selectedCategory,
+                            items: (_isIncomeTransaction ? _incomeCategories : _expenseCategories)
+                                .map((category) {
+                              return DropdownMenuItem<TransactionCategory>(
+                                value: category,
+                                child: Text(category.name),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() {
+                                  _selectedCategory = value;
+                                  _loadSubcategories(value.id);
+                                });
+                              }
+                            },
+                            validator: (value) {
+                              if (value == null || value.id.isEmpty) {
+                                return 'Veuillez sélectionner une catégorie';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: IconButton(
+                            icon: const Icon(Icons.settings),
+                            tooltip: 'Gérer les catégories',
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => TransactionCategoriesScreen(
+                                    initialType: _isIncomeTransaction ? 'income' : 'expense',
+                                  ),
+                                ),
+                              ).then((_) {
+                                // Actualiser les catégories à la fermeture de l'écran
+                                _loadCategories();
+                              });
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     // Sous-catégorie
                     if (_subcategories.isNotEmpty)
-                      DropdownButtonFormField<String>(
+                      DropdownButtonFormField<TransactionSubcategory>(
                         decoration: const InputDecoration(
                           labelText: 'Sous-catégorie',
                           border: OutlineInputBorder(),
@@ -436,9 +582,9 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                         ),
                         value: _selectedSubcategory,
                         items: _subcategories.map((subcategory) {
-                          return DropdownMenuItem<String>(
+                          return DropdownMenuItem<TransactionSubcategory>(
                             value: subcategory,
-                            child: Text(subcategory),
+                            child: Text(subcategory.name),
                           );
                         }).toList(),
                         onChanged: (value) {

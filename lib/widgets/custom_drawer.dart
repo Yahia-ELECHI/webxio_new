@@ -107,6 +107,12 @@ class CustomDrawer extends StatelessWidget {
                   title: 'Transactions',
                   route: '/transactions',
                 ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.category,
+                  title: 'Catégories',
+                  route: '/transaction-categories',
+                ),
                 const Divider(),
                 _buildDrawerItem(
                   context,

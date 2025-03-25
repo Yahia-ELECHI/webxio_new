@@ -14,7 +14,9 @@ class ProjectTransaction {
   final DateTime transactionDate;
   final String transactionType; 
   final String category; 
-  final String? subcategory; 
+  final String? subcategory;
+  final String? categoryId;
+  final String? subcategoryId;
   final DateTime createdAt;
   final DateTime? updatedAt;
   final String createdBy;
@@ -34,6 +36,8 @@ class ProjectTransaction {
     required this.transactionType,
     required this.category,
     this.subcategory,
+    this.categoryId,
+    this.subcategoryId,
     required this.createdAt,
     this.updatedAt,
     required this.createdBy,
@@ -58,6 +62,8 @@ class ProjectTransaction {
       transactionType: json['transaction_type'] as String, 
       category: json['category'] as String,
       subcategory: json['subcategory'] as String?,
+      categoryId: json['category_id'] as String?,
+      subcategoryId: json['subcategory_id'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -83,6 +89,8 @@ class ProjectTransaction {
       'transaction_type': transactionType, 
       'category': category,
       'subcategory': subcategory,
+      'category_id': categoryId,
+      'subcategory_id': subcategoryId,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
       'created_by': createdBy,
@@ -105,6 +113,8 @@ class ProjectTransaction {
     String? transactionType, 
     String? category,
     String? subcategory,
+    String? categoryId,
+    String? subcategoryId,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdBy,
@@ -124,6 +134,8 @@ class ProjectTransaction {
       transactionType: transactionType ?? this.transactionType, 
       category: category ?? this.category,
       subcategory: subcategory ?? this.subcategory,
+      categoryId: categoryId ?? this.categoryId,
+      subcategoryId: subcategoryId ?? this.subcategoryId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
@@ -174,6 +186,8 @@ class ProjectTransaction {
       transactionType: json['transaction_type'] as String, 
       category: json['category'] as String,
       subcategory: json['subcategory'] as String?,
+      categoryId: json['category_id'] as String?,
+      subcategoryId: json['subcategory_id'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
