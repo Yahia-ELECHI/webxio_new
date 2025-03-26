@@ -23,6 +23,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _plannedBudgetController = TextEditingController();
   
   final ProjectService _projectService = ProjectService();
   final TeamService _teamService = TeamService();
@@ -44,6 +45,11 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
       _nameController.text = widget.project!.name;
       _descriptionController.text = widget.project!.description;
       _status = widget.project!.status;
+      
+      if (widget.project!.plannedBudget != null && widget.project!.plannedBudget! > 0) {
+        _plannedBudgetController.text = widget.project!.plannedBudget!.toString();
+      }
+      
       _loadProjectTeams();
     }
   }
@@ -86,6 +92,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
+    _plannedBudgetController.dispose();
     super.dispose();
   }
 
@@ -109,45 +116,55 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
         return;
       }
 
+      double? plannedBudget;
+      if (_plannedBudgetController.text.isNotEmpty) {
+        try {
+          plannedBudget = double.parse(_plannedBudgetController.text.replaceAll(',', '.'));
+        } catch (e) {
+          setState(() {
+            _errorMessage = 'Le budget prévu doit être un nombre valide';
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+
       Project? savedProject;
       
       if (widget.project == null) {
-        // Créer un nouveau projet
         final newProject = Project(
-          id: Uuid().v4(), // Générer un ID unique
+          id: Uuid().v4(), 
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
           createdAt: DateTime.now(),
           createdBy: userId,
           status: _status,
+          plannedBudget: plannedBudget, 
         );
 
         savedProject = await _projectService.createProject(newProject);
       } else {
-        // Mettre à jour un projet existant
         final updatedProject = widget.project!.copyWith(
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
           updatedAt: DateTime.now(),
           status: _status,
+          plannedBudget: plannedBudget, 
         );
 
         savedProject = await _projectService.updateProject(updatedProject);
       }
       
-      // Associer les équipes sélectionnées au projet
       if (savedProject != null) {
-        // Supprimer toutes les associations existantes pour ce projet
         await _teamService.removeAllTeamsFromProject(savedProject.id);
         
-        // Ajouter les nouvelles associations
         for (String teamId in _selectedTeamIds) {
           await _teamService.addProjectToTeam(teamId, savedProject.id);
         }
       }
 
       if (mounted) {
-        Navigator.pop(context, true); // Retourner à l'écran précédent avec un résultat
+        Navigator.pop(context, true); 
       }
     } catch (e) {
       setState(() {
@@ -199,6 +216,26 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Veuillez entrer une description';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _plannedBudgetController,
+              decoration: const InputDecoration(
+                labelText: 'Budget prévu (€)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.euro),
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              validator: (value) {
+                if (value != null && value.isNotEmpty) {
+                  try {
+                    double.parse(value.replaceAll(',', '.'));
+                  } catch (e) {
+                    return 'Veuillez entrer un montant valide';
+                  }
                 }
                 return null;
               },

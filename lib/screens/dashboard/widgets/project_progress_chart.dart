@@ -126,20 +126,43 @@ class ProjectProgressChart extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             // Indicateur du budget
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.attach_money,
-                  size: 16,
-                  color: _getBudgetStatusColor(project.budgetUsagePercentage),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.attach_money,
+                      size: 16,
+                      color: _getBudgetStatusColor(project.budgetUsagePercentage),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_formatCurrency(project.usedBudgetAmount)} / ${_formatCurrency(project.budgetAmount)} • Consommation du Budget réel: ${project.budgetUsagePercentage.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  'Budget: ${project.budgetUsagePercentage.toStringAsFixed(1)}% utilisé',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.account_balance_wallet,
+                      size: 16,
+                      color: _getBudgetStatusColor(project.plannedBudgetUsagePercentage),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_formatCurrency(project.usedBudgetAmount)} / ${_formatCurrency(project.plannedBudgetAmount)} • Consommation du Budget prévu: ${project.plannedBudgetUsagePercentage.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -157,6 +180,16 @@ class ProjectProgressChart extends StatelessWidget {
       return Colors.orange;
     } else {
       return Colors.red;
+    }
+  }
+
+  // Fonction pour formater les montants en devise
+  String _formatCurrency(double amount) {
+    // Formatter les montants en K€ si > 1000
+    if (amount >= 1000) {
+      return '${(amount / 1000).toStringAsFixed(1)}K€';
+    } else {
+      return '${amount.toStringAsFixed(0)}€';
     }
   }
 }

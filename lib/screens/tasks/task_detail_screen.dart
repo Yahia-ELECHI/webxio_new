@@ -5,11 +5,13 @@ import '../../models/team_model.dart';
 import '../../models/task_history_model.dart';
 import '../../models/attachment_model.dart';
 import '../../models/project_transaction_model.dart';
+import '../../models/task_comment_model.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/user_service.dart';
 import '../../services/attachment_service.dart';
 import '../../services/budget_service.dart';
+import '../../services/task_comment_service.dart';
 import '../../widgets/budget_summary_widget.dart';
 import '../../widgets/custom_app_bar.dart';
 import '../budget/transaction_form_screen.dart';
@@ -43,6 +45,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   final UserService _userService = UserService();
   final AttachmentService _attachmentService = AttachmentService();
   final BudgetService _budgetService = BudgetService();
+  final TaskCommentService _commentService = TaskCommentService();
   
   late Task _task;
   bool _isLoading = false;
@@ -56,6 +59,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _loadingAttachments = true;
   List<ProjectTransaction> _taskTransactions = [];
   bool _loadingBudget = true;
+  List<TaskComment> _comments = [];
+  bool _loadingComments = true;
+  final TextEditingController _commentController = TextEditingController();
+  String? _editingCommentId;
 
   @override
   void initState() {
@@ -66,6 +73,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     _loadTaskHistory();
     _loadAttachments();
     _loadTaskBudget();
+    _loadComments();
+  }
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAssignedTeams() async {
@@ -153,6 +167,30 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
   }
 
+  Future<void> _loadComments() async {
+    try {
+      final comments = await _commentService.getCommentsByTask(_task.id);
+      setState(() {
+        _comments = comments;
+        _loadingComments = false;
+      });
+      
+      // Charger les noms des utilisateurs qui ont fait les commentaires
+      if (comments.isNotEmpty) {
+        final userIds = comments.map((c) => c.userId).toSet().toList();
+        final displayNames = await _userService.getUsersDisplayNames(userIds);
+        setState(() {
+          _userDisplayNames.addAll(displayNames);
+        });
+      }
+    } catch (e) {
+      print('Erreur lors du chargement des commentaires: $e');
+      setState(() {
+        _loadingComments = false;
+      });
+    }
+  }
+
   Future<void> _refreshTaskDetails() async {
     try {
       final updatedTask = await _projectService.getTaskById(_task.id);
@@ -164,6 +202,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       _loadTaskHistory();
       _loadAttachments();
       _loadTaskBudget();
+      _loadComments();
     } catch (e) {
       setState(() {
         _errorMessage = 'Erreur lors du chargement des détails de la tâche: $e';
@@ -501,6 +540,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           const SizedBox(height: 16),
           _buildAttachmentsSection(),
           
+          // Section commentaires
+          const SizedBox(height: 24),
+          _buildCommentsSection(),
+          
           // Section historique des changements
           const SizedBox(height: 24),
           _buildTaskHistorySection(),
@@ -508,7 +551,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       ),
     );
   }
-  
+
   Widget _buildAttachmentsSection() {
     return Card(
       elevation: 2,
@@ -1097,6 +1140,270 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentsSection() {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Commentaires',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Zone de saisie de commentaire
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _commentController,
+                    decoration: InputDecoration(
+                      hintText: _editingCommentId != null 
+                          ? 'Modifier votre commentaire...' 
+                          : 'Ajouter un commentaire...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                    minLines: 2,
+                    maxLines: 5,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        _editingCommentId != null ? Icons.check : Icons.send,
+                        color: Colors.blue,
+                      ),
+                      onPressed: () async {
+                        if (_commentController.text.trim().isEmpty) return;
+                        
+                        try {
+                          setState(() {
+                            _loadingComments = true;
+                          });
+                          
+                          if (_editingCommentId != null) {
+                            // Mettre à jour le commentaire existant
+                            await _commentService.updateComment(
+                              _editingCommentId!,
+                              _commentController.text.trim(),
+                            );
+                            setState(() {
+                              _editingCommentId = null;
+                            });
+                          } else {
+                            // Ajouter un nouveau commentaire
+                            await _commentService.addComment(
+                              _task.id,
+                              _commentController.text.trim(),
+                            );
+                          }
+                          
+                          _commentController.clear();
+                          await _loadComments();
+                        } catch (e) {
+                          _showErrorSnackBar('Erreur lors de l\'envoi du commentaire: $e');
+                          setState(() {
+                            _loadingComments = false;
+                          });
+                        }
+                      },
+                    ),
+                    if (_editingCommentId != null)
+                      IconButton(
+                        icon: const Icon(
+                          Icons.close,
+                          color: Colors.red,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _editingCommentId = null;
+                            _commentController.clear();
+                          });
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 8),
+            
+            // Liste des commentaires
+            if (_loadingComments)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20.0),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_comments.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20.0),
+                  child: Text(
+                    'Aucun commentaire',
+                    style: TextStyle(
+                      fontStyle: FontStyle.italic,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _comments.length,
+                itemBuilder: (context, index) {
+                  return _buildCommentItem(_comments[index]);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCommentItem(TaskComment comment) {
+    final userName = _userDisplayNames[comment.userId] ?? 'Utilisateur';
+    final bool isCurrentUser = comment.userId == _userDisplayNames.keys.firstWhere(
+      (key) => _userDisplayNames[key] == userName,
+      orElse: () => '',
+    );
+    
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: comment.getColor().withOpacity(0.1),
+                    child: Icon(
+                      comment.getIcon(),
+                      size: 16,
+                      color: comment.getColor(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    userName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Text(
+                    _formatDateTime(comment.createdAt),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  if (isCurrentUser) ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.edit,
+                        size: 16,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _editingCommentId = comment.id;
+                          _commentController.text = comment.comment;
+                        });
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.delete,
+                        size: 16,
+                        color: Colors.red,
+                      ),
+                      onPressed: () => _confirmDeleteComment(comment),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(comment.comment),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteComment(TaskComment comment) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer le commentaire'),
+        content: const Text(
+          'Êtes-vous sûr de vouloir supprimer ce commentaire ? Cette action ne peut pas être annulée.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                setState(() {
+                  _loadingComments = true;
+                });
+                
+                await _commentService.deleteComment(comment.id);
+                await _loadComments();
+              } catch (e) {
+                _showErrorSnackBar('Erreur lors de la suppression du commentaire: $e');
+                setState(() {
+                  _loadingComments = false;
+                });
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer'),
           ),
         ],
       ),

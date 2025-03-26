@@ -122,10 +122,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _tasksMap = {for (var task in _tasksList) task.id: task};
 
           // Mise à jour des graphiques avec les données disponibles
-          _prepareAllChartData();
-
-          // Montrer tout de suite que le chargement est terminé
-          _isLoading = false;
+          _isLoading = false; // Marquer comme chargé avant de préparer les graphiques (pour afficher l'UI)
+          
+          // Lancer la préparation des graphiques de manière asynchrone
+          _prepareAllChartData().then((_) {
+            // Rafraîchir l'UI quand les données du budget planifié sont prêtes
+            if (mounted) setState(() {});
+          });
         });
 
         // 2. Continuer le chargement en arrière-plan (sans bloquer l'UI)
@@ -194,7 +197,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       // Préparation des données pour les charts et widgets
-      _prepareAllChartData();
+      await _prepareAllChartData();
 
     } catch (e) {
       print('Erreur lors du chargement complet des données: $e');
@@ -254,7 +257,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _tasksMap = {for (var task in _tasksList) task.id: task};
 
           // Préparer toutes les données pour les graphiques
-          _prepareAllChartData();
+          _prepareAllChartData().then((_) {
+            // Rafraîchir l'UI quand les données du budget planifié sont prêtes
+            if (mounted) setState(() {});
+          });
         });
 
         // Charger l'historique des tâches en arrière-plan et mettre à jour l'interface
@@ -314,14 +320,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // Prépare toutes les données pour les graphiques et widgets
-  void _prepareAllChartData() {
-    _prepareTasksByStatusData(_tasksList);
-    _prepareTasksByPriorityData(_tasksList);
-    _prepareProjectProgressData(_projectsList, _phasesList, _tasksList);
-    _prepareUpcomingTasksData(_tasksList);
-    _preparePhaseProgressData(_phasesList, _tasksList);
+  Future<void> _prepareAllChartData() async {
+    // Préfiltrer les données si un projet spécifique est sélectionné
+    List<Task> filteredTasks = _tasksList;
+    List<Phase> filteredPhases = _phasesList;
+    List<ProjectTransaction> filteredTransactions = _projectTransactionsList;
+    
+    // Si un projet spécifique est sélectionné, filtrer toutes les données
+    if (!_showAllProjects && _selectedProjectId != null) {
+      // Filtrer les tâches du projet sélectionné
+      filteredTasks = _tasksList.where((task) => task.projectId == _selectedProjectId).toList();
+      // Filtrer les phases du projet sélectionné
+      filteredPhases = _phasesList.where((phase) => phase.projectId == _selectedProjectId).toList();
+      // Filtrer les transactions du projet sélectionné
+      filteredTransactions = _projectTransactionsList.where((tx) => tx.projectId == _selectedProjectId).toList();
+      
+      print('Projet sélectionné: $_selectedProjectId - Filtrage appliqué');
+      print('Tâches filtrées: ${filteredTasks.length}/${_tasksList.length}');
+      print('Phases filtrées: ${filteredPhases.length}/${_phasesList.length}');
+      print('Transactions filtrées: ${filteredTransactions.length}/${_projectTransactionsList.length}');
+    } else {
+      print('Tous les projets sont sélectionnés - Aucun filtrage appliqué');
+    }
+
+    _prepareTasksByStatusData(filteredTasks);
+    _prepareTasksByPriorityData(filteredTasks);
+    await _prepareProjectProgressData(_projectsList, filteredPhases, filteredTasks);
+    _prepareUpcomingTasksData(filteredTasks);
+    _preparePhaseProgressData(filteredPhases, filteredTasks);
     _prepareBudgetOverviewData(_projectsList);
-    _prepareRecentTransactionsData(_projectTransactionsList);
+    _prepareRecentTransactionsData(filteredTransactions);
   }
 
   void _prepareTasksByStatusData(List<Task> tasks) {
@@ -366,9 +394,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }).toList();
   }
 
-  void _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks) {
-    _projectProgressData = projects.map((project) {
-
+  Future<void> _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks) async {
+    // Liste temporaire pour stocker les résultats
+    final List<ProjectProgressData> tempData = [];
+    
+    // Traiter chaque projet
+    for (var project in projects) {
       // Calcul du pourcentage de progression
       final projectPhases = phases.where((phase) => phase.projectId == project.id).toList();
       final projectTasks = tasks.where((task) => task.projectId == project.id).toList();
@@ -384,6 +415,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
       double budgetUsagePercentage = 0;
+      double plannedBudgetUsagePercentage = 0; // Nouveau pourcentage par rapport au budget prévu
+      double usedBudget = 0; // Montant des dépenses utilisé pour les deux calculs
+      double totalRevenues = 0; // Montant des revenus (budget réel)
+
+      // Récupérer le budget planifié directement depuis la base de données (sans cache)
+      double plannedBudget = await _projectService.getProjectPlannedBudget(project.id);
+      print('Budget planifié pour ${project.name} récupéré directement: $plannedBudget');
 
       if (_projectTransactionsList.isNotEmpty) {
         final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
@@ -391,12 +429,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Si on a trouvé des transactions pour ce projet, calculer le pourcentage d'utilisation
         if (projectTransactions.isNotEmpty) {
           // Calculer les dépenses (expenses)
-          double usedBudget = projectTransactions
+          usedBudget = projectTransactions
               .where((tx) => !tx.isIncome)
               .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
 
           // Calculer les revenus (income)
-          double totalRevenues = projectTransactions
+          totalRevenues = projectTransactions
               .where((tx) => tx.isIncome)
               .fold(0.0, (sum, tx) => sum + tx.absoluteAmount);
 
@@ -406,18 +444,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
           } else if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
             // Sinon, utiliser le budget alloué comme référence si disponible
             budgetUsagePercentage = (usedBudget / project.budgetAllocated!) * 100;
+            totalRevenues = project.budgetAllocated ?? 0; // Utiliser le budget alloué comme total des revenus
           } else {
             // Si pas de revenus et pas de budget alloué, montrer le pourcentage en fonction des dépenses
             budgetUsagePercentage = usedBudget > 0 ? 100 : 0; // Si des dépenses existent sans revenus ni budget, 100%
+            totalRevenues = usedBudget; // Par défaut, les revenus égalent les dépenses (budget consommé à 100%)
           }
           budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
+          
+          // Calcul du pourcentage par rapport au budget prévu (statique)
+          if (plannedBudget > 0) {
+            plannedBudgetUsagePercentage = (usedBudget / plannedBudget) * 100;
+            plannedBudgetUsagePercentage = plannedBudgetUsagePercentage.clamp(0, 100);
+          } else {
+            plannedBudgetUsagePercentage = 0;
+          }
         } else {
           // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
           budgetUsagePercentage = project.budgetUsagePercentage;
+          
+          // Calculer le pourcentage par rapport au budget prévu
+          if (plannedBudget > 0 && project.budgetConsumed != null) {
+            plannedBudgetUsagePercentage = (project.budgetConsumed! / plannedBudget) * 100;
+            plannedBudgetUsagePercentage = plannedBudgetUsagePercentage.clamp(0, 100);
+          } else {
+            plannedBudgetUsagePercentage = 0;
+          }
+          
+          // Utiliser les valeurs par défaut du projet
+          if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
+            totalRevenues = project.budgetAllocated!;
+          }
+          if (project.budgetConsumed != null) {
+            usedBudget = project.budgetConsumed!;
+          }
         }
       } else {
         // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
         budgetUsagePercentage = project.budgetUsagePercentage;
+        
+        // Calculer le pourcentage par rapport au budget prévu
+        if (plannedBudget > 0 && project.budgetConsumed != null) {
+          plannedBudgetUsagePercentage = (project.budgetConsumed! / plannedBudget) * 100;
+          plannedBudgetUsagePercentage = plannedBudgetUsagePercentage.clamp(0, 100);
+        } else {
+          plannedBudgetUsagePercentage = 0;
+        }
+        
+        // Utiliser les valeurs par défaut du projet
+        if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
+          totalRevenues = project.budgetAllocated!;
+        }
+        if (project.budgetConsumed != null) {
+          usedBudget = project.budgetConsumed!;
+        }
       }
 
       // Déterminer la couleur en fonction du pourcentage d'utilisation
@@ -430,14 +510,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         budgetStatusColor = Colors.red; // Plus de 75% : rouge
       }
 
-      return ProjectProgressData(
+      // Ajouter à la liste temporaire
+      tempData.add(ProjectProgressData(
         projectName: project.name,
         projectId: project.id,
         progressPercentage: progressPercentage,
         budgetUsagePercentage: budgetUsagePercentage,
+        plannedBudgetUsagePercentage: plannedBudgetUsagePercentage,
+        budgetAmount: totalRevenues,
+        plannedBudgetAmount: plannedBudget, 
+        usedBudgetAmount: usedBudget,
         progressColor: _getProgressColor(progressPercentage),
-      );
-    }).toList();
+      ));
+    }
+    
+    // Mettre à jour la liste finale
+    setState(() {
+      _projectProgressData = tempData;
+    });
   }
 
   void _prepareUpcomingTasksData(List<Task> tasks) {
@@ -549,9 +639,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _prepareBudgetOverviewData(List<Project> projects) {
+    // Si un projet spécifique est sélectionné, ne garder que ce projet
+    List<Project> relevantProjects = projects;
+    if (!_showAllProjects && _selectedProjectId != null) {
+      relevantProjects = projects.where((project) => project.id == _selectedProjectId).toList();
+    }
 
     // Filtrer les projets avec un budget alloué ou des transactions
-    List<Project> relevantProjects = projects.where((project) {
+    relevantProjects = relevantProjects.where((project) {
       // Vérifier si le projet a un budget alloué
       bool hasBudget = project.budgetAllocated != null && project.budgetAllocated! > 0;
 
@@ -564,7 +659,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _budgetOverviewData = relevantProjects
       .map((project) {
-
         // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
         double usedBudget = 0;
         double budgetUsagePercentage = 0;
@@ -572,7 +666,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (_projectTransactionsList.isNotEmpty) {
           final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
 
-          // Si on a trouvé des transactions pour ce projet, calculer le montant utilisé
+          // Si on a trouvé des transactions pour ce projet, calculer le pourcentage d'utilisation
           if (projectTransactions.isNotEmpty) {
             // Calculer les dépenses (expenses)
             usedBudget = projectTransactions
@@ -853,10 +947,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _refreshDashboard() async {
-    await _loadDashboardData();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Tableau de bord actualisé')),
-    );
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      await _loadFullData();
+    } catch (e) {
+      print('Erreur lors du rafraîchissement des données: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors du rafraîchissement des données: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   void _showProjectSelector() {
@@ -984,7 +1090,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // Adapter la taille du texte en fonction de la largeur disponible
-        final double titleFontSize = constraints.maxWidth < 350 ? 20 : 24;
+        final double titleFontSize = constraints.maxWidth < 350 ? 20 : 20;
         final double subtitleFontSize = constraints.maxWidth < 350 ? 14 : 16;
 
         return Column(
@@ -1048,14 +1154,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildSummaryCards() {
+    // Filtrer les données en fonction du projet sélectionné
+    List<Task> filteredTasks = _tasksList;
+    List<Phase> filteredPhases = _phasesList;
+    List<Project> relevantProjects = _projectsList;
+    
+    if (!_showAllProjects && _selectedProjectId != null) {
+      filteredTasks = _tasksList.where((task) => task.projectId == _selectedProjectId).toList();
+      filteredPhases = _phasesList.where((phase) => phase.projectId == _selectedProjectId).toList();
+      relevantProjects = _projectsList.where((project) => project.id == _selectedProjectId).toList();
+    }
+
     // Calculer le nombre de tâches terminées
-    final int completedTasks = _tasksList.where((task) =>
+    final int completedTasks = filteredTasks.where((task) =>
       task.status.toLowerCase() == 'completed' ||
       task.status.toLowerCase() == 'terminée'
     ).length;
 
     // Calculer le nombre de phases en cours
-    final int inProgressPhases = _phasesList.where((phase) =>
+    final int inProgressPhases = filteredPhases.where((phase) =>
       phase.status.toLowerCase() == 'completed' ||
       phase.status.toLowerCase() == 'terminée'
     ).length;
@@ -1072,21 +1189,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         _buildSummaryCard(
           title: 'Total Projets',
-          value: _projectsList.length.toString(),
+          value: relevantProjects.length.toString(),
           icon: Icons.folder,
           color: Colors.blue,
           onTap: _navigateToProjectsList,
         ),
         _buildSummaryCard(
           title: 'Tâches',
-          value: '$completedTasks/${_tasksList.length}',
+          value: '$completedTasks/${filteredTasks.length}',
           icon: Icons.task_alt,
           color: Colors.green,
           onTap: _navigateToTasksList,
         ),
         _buildSummaryCard(
           title: 'Phases',
-          value: '$inProgressPhases/${_phasesList.length}',
+          value: '$inProgressPhases/${filteredPhases.length}',
           icon: Icons.checklist_rounded,
           color: Colors.green,
           onTap: _navigateToPhasesList,
@@ -1102,75 +1219,138 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Adapter la taille des éléments en fonction de la largeur disponible
-        final double availableWidth = constraints.maxWidth;
-        final bool isSmallScreen = availableWidth < 200;
-        final bool isMediumScreen = availableWidth >= 200 && availableWidth < 300;
+    return SummaryCardWidget(
+      title: title,
+      value: value,
+      icon: icon,
+      color: color,
+      onTap: onTap,
+    );
+  }
+}
 
-        // Adapter la taille des éléments
-        final double iconSize = isSmallScreen ? 16 : 20;
-        final double containerSize = isSmallScreen ? 32 : 40;
-        final double fontSize = isSmallScreen ? 11 : (isMediumScreen ? 12 : 14);
-        final double titleFontSize = isSmallScreen ? 10 : (isMediumScreen ? 11 : 12);
+class SummaryCardWidget extends StatefulWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
 
-        return GestureDetector(
-          onTap: onTap,
-          child: Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                children: [
-                  Container(
-                    width: containerSize,
-                    height: containerSize,
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      icon,
-                      color: color,
-                      size: iconSize,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          value,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: fontSize,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          title,
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: titleFontSize,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+  const SummaryCardWidget({
+    Key? key,
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  State<SummaryCardWidget> createState() => _SummaryCardWidgetState();
+}
+
+class _SummaryCardWidgetState extends State<SummaryCardWidget> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // Récupérer la largeur de l'écran pour adapter la taille des éléments
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isSmallScreen = screenWidth < 400;
+    final bool isMediumScreen = screenWidth >= 400 && screenWidth < 600;
+
+    // Adapter la taille des éléments en fonction de la taille de l'écran
+    final double iconSize = isSmallScreen ? 16 : 20;
+    final double containerSize = isSmallScreen ? 32 : 40;
+    final double fontSize = isSmallScreen ? 11 : (isMediumScreen ? 12 : 15);
+    final double titleFontSize = isSmallScreen ? 10 : (isMediumScreen ? 11 : 12);
+    final EdgeInsets padding = isSmallScreen 
+        ? const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0)
+        : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0);
+
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-        );
-      },
+          child: Stack(
+            children: [
+              Padding(
+                padding: padding,
+                child: Row(
+                  children: [
+                    Container(
+                      width: containerSize,
+                      height: containerSize,
+                      decoration: BoxDecoration(
+                        color: widget.color.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        widget.icon,
+                        color: widget.color,
+                        size: iconSize,
+                      ),
+                    ),
+                    SizedBox(width: isSmallScreen ? 8 : 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.value,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: fontSize,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Étiquette transparente qui apparaît lors du clic
+              //if (_isPressed)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 8.0),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(12),
+                        bottomRight: Radius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      widget.title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: titleFontSize,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -19,6 +19,10 @@ class ProjectProgressData {
   final String projectId;
   final double progressPercentage;
   final double budgetUsagePercentage;
+  final double plannedBudgetUsagePercentage; 
+  final double budgetAmount; 
+  final double plannedBudgetAmount; 
+  final double usedBudgetAmount; 
   final Color progressColor;
 
   ProjectProgressData({
@@ -26,6 +30,10 @@ class ProjectProgressData {
     required this.projectId,
     required this.progressPercentage,
     required this.budgetUsagePercentage,
+    required this.plannedBudgetUsagePercentage,
+    required this.budgetAmount,
+    required this.plannedBudgetAmount,
+    required this.usedBudgetAmount,
     required this.progressColor,
   });
 }
