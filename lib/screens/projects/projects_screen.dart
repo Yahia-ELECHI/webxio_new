@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/project_model.dart';
 import '../../models/team_model.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/auth_service.dart';
+import '../../providers/role_provider.dart';
 import '../../widgets/custom_app_bar.dart';
+import '../../widgets/permission_gated.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
 import 'widgets/modern_project_card.dart';
@@ -99,19 +102,22 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         ],
       ),
       body: _buildBody(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const ProjectFormScreen(),
-            ),
-          );
-          if (result == true) {
-            _loadProjects();
-          }
-        },
-        child: const Icon(Icons.add),
+      floatingActionButton: PermissionGated(
+        permissionName: 'create_project',
+        child: FloatingActionButton(
+          onPressed: () async {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ProjectFormScreen(),
+              ),
+            );
+            if (result == true) {
+              _loadProjects();
+            }
+          },
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -153,19 +159,26 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               style: TextStyle(fontSize: 18),
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ProjectFormScreen(),
-                  ),
-                );
-                if (result == true) {
-                  _loadProjects();
-                }
-              },
-              child: const Text('Créer un projet'),
+            PermissionGated(
+              permissionName: 'create_project',
+              child: ElevatedButton(
+                onPressed: () async {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ProjectFormScreen(),
+                    ),
+                  );
+                  if (result == true) {
+                    _loadProjects();
+                  }
+                },
+                child: const Text('Créer un projet'),
+              ),
+              fallback: const Text(
+                'Vous n\'avez pas l\'autorisation de créer des projets',
+                style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+              ),
             ),
           ],
         ),
@@ -192,8 +205,52 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 _loadProjects();
               }
             },
+            onEdit: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProjectFormScreen(project: project),
+                ),
+              );
+              if (result == true) {
+                _loadProjects();
+              }
+            },
+            onDelete: () {
+              _showDeleteConfirmationDialog(project);
+            },
           );
         },
+      ),
+    );
+  }
+
+  void _showDeleteConfirmationDialog(Project project) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmation de suppression'),
+        content: Text('Voulez-vous vraiment supprimer le projet "${project.name}" ?'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () async {
+              try {
+                await _projectService.deleteProject(project.id);
+                _loadProjects();
+              } catch (e) {
+                print('Erreur lors de la suppression du projet : $e');
+              }
+              Navigator.of(context).pop();
+            },
+            child: const Text('Supprimer'),
+          ),
+        ],
       ),
     );
   }

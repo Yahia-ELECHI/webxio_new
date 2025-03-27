@@ -1,19 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:marquee/marquee.dart';
+import 'package:provider/provider.dart';
 import '../../../models/project_model.dart';
 import '../../../screens/dashboard/widgets/islamic_patterns.dart';
 import '../../../services/team_service/team_service.dart';
+import '../../../providers/role_provider.dart';
+import '../../../widgets/permission_gated.dart';
 
 class ModernProjectCard extends StatelessWidget {
   final Project project;
   final int? teamCount;
   final VoidCallback onTap;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   const ModernProjectCard({
     Key? key,
     required this.project,
     this.teamCount,
     required this.onTap,
+    this.onEdit,
+    this.onDelete,
   }) : super(key: key);
 
   @override
@@ -210,6 +217,44 @@ class ModernProjectCard extends StatelessWidget {
                               ),
                             ),
                           ],
+                        ),
+                      ],
+                    ),
+                    
+                    // Boutons d'actions basés sur les permissions
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        // Bouton d'édition du projet (uniquement visible avec la permission)
+                        PermissionGated(
+                          permissionName: 'update_project',
+                          projectId: project.id,
+                          showLoadingIndicator: false,
+                          child: IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.white),
+                            onPressed: onEdit,
+                            tooltip: 'Modifier',
+                            iconSize: 20,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        
+                        // Bouton de suppression du projet (uniquement visible avec la permission)
+                        PermissionGated(
+                          permissionName: 'delete_project',
+                          projectId: project.id,
+                          showLoadingIndicator: false,
+                          child: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.white),
+                            onPressed: onDelete,
+                            tooltip: 'Supprimer',
+                            iconSize: 20,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
                         ),
                       ],
                     ),
