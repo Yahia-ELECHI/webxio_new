@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/team_model.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
 import '../../widgets/islamic_patterns.dart';
 import 'team_detail_screen.dart';
 import 'create_team_screen.dart';
@@ -30,6 +32,9 @@ class _TeamsScreenState extends State<TeamsScreen> {
   void initState() {
     super.initState();
     _loadData();
+    
+    // Tracer les informations sur l'utilisateur au démarrage de l'écran
+    _logUserAccessInfo();
   }
 
   Future<void> _loadData() async {
@@ -92,6 +97,80 @@ class _TeamsScreenState extends State<TeamsScreen> {
         builder: (context) => const JoinTeamScreen(),
       ),
     ).then((_) => _loadData());
+  }
+
+  /// Journalise les informations détaillées sur l'utilisateur pour le débogage RBAC
+  Future<void> _logUserAccessInfo() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) {
+        print('ERREUR: TeamsScreen - Aucun utilisateur connecté');
+        return;
+      }
+      
+      print('\n===== INFORMATIONS D\'ACCÈS UTILISATEUR (TeamsScreen) =====');
+      print('ID utilisateur: ${user.id}');
+      print('Email: ${user.email}');
+      
+      // Récupérer le profil utilisateur
+      final profileResponse = await Supabase.instance.client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .single();
+      
+      if (profileResponse != null) {
+        print('Nom: ${profileResponse['first_name']} ${profileResponse['last_name']}');
+      }
+      
+      // Récupérer les rôles de l'utilisateur
+      final userRolesResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('role_id, roles (name, description), team_id, project_id')
+          .eq('user_id', user.id);
+      
+      print('\nRôles attribués:');
+      if (userRolesResponse != null && userRolesResponse.isNotEmpty) {
+        for (var roleData in userRolesResponse) {
+          final roleName = roleData['roles']['name'];
+          final roleDesc = roleData['roles']['description'];
+          final teamId = roleData['team_id'];
+          final projectId = roleData['project_id'];
+          
+          print('- Rôle: $roleName ($roleDesc)');
+          if (teamId != null) print('  → Équipe: $teamId');
+          if (projectId != null) print('  → Projet: $projectId');
+          
+          // Récupérer toutes les permissions pour ce rôle
+          final rolePermissions = await Supabase.instance.client
+              .from('role_permissions')
+              .select('permissions (name, description)')
+              .eq('role_id', roleData['role_id']);
+          
+          if (rolePermissions != null && rolePermissions.isNotEmpty) {
+            print('  Permissions:');
+            for (var permData in rolePermissions) {
+              final permName = permData['permissions']['name'];
+              final permDesc = permData['permissions']['description'];
+              print('    • $permName: $permDesc');
+            }
+          }
+        }
+      } else {
+        print('Aucun rôle attribué à cet utilisateur.');
+      }
+      
+      // Vérifier spécifiquement la permission pour l'écran des équipes
+      final hasTeamAccess = await Supabase.instance.client.rpc('user_has_permission', params: {
+        'p_user_id': user.id,
+        'p_permission_name': 'read_team',
+      });
+      print('\nPermission "read_team" (accès équipes): ${hasTeamAccess ? 'ACCORDÉE' : 'REFUSÉE'}');
+      
+      print('============================================================\n');
+    } catch (e) {
+      print('ERREUR lors de la récupération des informations d\'accès: $e');
+    }
   }
 
   @override

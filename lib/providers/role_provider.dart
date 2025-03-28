@@ -19,12 +19,16 @@ class RoleProvider extends ChangeNotifier {
   }) async {
     // Clé de cache pour cette vérification spécifique
     final cacheKey = '${permissionName}_${teamId ?? ''}_${projectId ?? ''}';
+    print('DEBUG: RoleProvider.hasPermission() - Vérification de la permission: $permissionName');
+    print('DEBUG: RoleProvider.hasPermission() - Clé de cache: $cacheKey');
     
     // Vérifier si on a déjà le résultat en cache
     if (_permissionCache.containsKey(cacheKey)) {
+      print('DEBUG: RoleProvider.hasPermission() - Résultat trouvé en cache: ${_permissionCache[cacheKey]}');
       return _permissionCache[cacheKey]!;
     }
     
+    print('DEBUG: RoleProvider.hasPermission() - Pas de cache, appel au service');
     // Sinon, demander au service et stocker le résultat en cache
     final hasPermission = await _roleService.hasPermission(
       permissionName,
@@ -32,6 +36,7 @@ class RoleProvider extends ChangeNotifier {
       projectId: projectId,
     );
     
+    print('DEBUG: RoleProvider.hasPermission() - Résultat du service: $hasPermission');
     _permissionCache[cacheKey] = hasPermission;
     return hasPermission;
   }

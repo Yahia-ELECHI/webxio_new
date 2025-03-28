@@ -6,6 +6,7 @@ import '../../models/team_model.dart';
 import '../auth_service.dart';
 import '../email_service.dart';
 import '../notification_service.dart';
+import '../role_service.dart';
 import '../../models/project_model.dart';
 
 class TeamService {
@@ -19,6 +20,7 @@ class TeamService {
   static const String _usersTable = 'users';
   static const String _profilesTable = 'profiles';
   final NotificationService _notificationService = NotificationService();
+  final RoleService _roleService = RoleService();
 
   // Équipes
   Future<List<Team>> getTeams() async {
@@ -72,6 +74,13 @@ class TeamService {
 
   Future<Team> createTeam(Team team) async {
     try {
+      // Vérifier si l'utilisateur a la permission de créer une équipe
+      final hasPermission = await _roleService.hasPermission('create_team');
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de créer une équipe');
+      }
+      
       // Vérifier si createdBy est vide et le définir si nécessaire
       String createdBy = team.createdBy;
       if (createdBy.isEmpty) {
@@ -109,6 +118,16 @@ class TeamService {
 
   Future<Team> updateTeam(Team team) async {
     try {
+      // Vérifier si l'utilisateur a la permission de mettre à jour cette équipe
+      final hasPermission = await _roleService.hasPermission(
+        'update_team',
+        teamId: team.id,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de modifier cette équipe');
+      }
+      
       final response = await _supabase
           .from(_teamsTable)
           .update(team.toJson())
@@ -125,6 +144,16 @@ class TeamService {
 
   Future<void> deleteTeam(String teamId) async {
     try {
+      // Vérifier si l'utilisateur a la permission de supprimer cette équipe
+      final hasPermission = await _roleService.hasPermission(
+        'delete_team',
+        teamId: teamId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de supprimer cette équipe');
+      }
+      
       await _supabase
           .from(_teamsTable)
           .delete()
@@ -478,29 +507,58 @@ class TeamService {
 
   Future<Invitation> createInvitation(Invitation invitation) async {
     try {
-      // print('Début de la création d\'invitation pour ${invitation.email}');
+      // Vérifier si l'utilisateur a la permission d'inviter des membres
+      final hasPermission = await _roleService.hasPermission(
+        'invite_team_member',
+        teamId: invitation.teamId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation d\'inviter des membres dans cette équipe');
+      }
+      
+      // Générer un token d'invitation
+      final token = _generateInvitationToken();
+      final invitationWithToken = invitation.copyWith(token: token);
+      
       final response = await _supabase
           .from(_invitationsTable)
-          .insert(invitation.toJson())
+          .insert(invitationWithToken.toJson())
           .select()
           .single();
       
-      // print('Invitation créée avec succès dans la base de données');
+      final createdInvitation = Invitation.fromJson(response);
       
-      // Envoi de l'email via Brevo
-      try {
-        final success = await EmailService.sendInvitationEmailFromInvitation(invitation);
-        if (success) {
-          // print('Email d\'invitation envoyé avec succès à ${invitation.email}');
-        } else {
-          // print('Échec de l\'envoi de l\'email d\'invitation à ${invitation.email}');
+      // Envoyer un email d'invitation si le service d'email est disponible
+      if (createdInvitation.email.isNotEmpty) {
+        try {
+          // Récupérer les informations de l'équipe
+          final team = await getTeam(createdInvitation.teamId);
+          
+          // Récupérer les informations de l'invitation
+          final inviter = await _supabase
+              .from(_profilesTable)
+              .select('display_name, email')
+              .eq('id', createdInvitation.invitedBy)
+              .single();
+          
+          final inviterName = inviter['display_name'] ?? inviter['email'];
+          
+          // Envoyer un email d'invitation en utilisant la méthode statique sendInvitationEmail
+          await EmailService.sendInvitationEmail(
+            to: createdInvitation.email,
+            teamName: team.name,
+            inviterName: inviterName.toString(),
+            token: token,
+            teamId: team.id,
+          );
+        } catch (emailError) {
+          print('Erreur lors de l\'envoi de l\'email d\'invitation: $emailError');
+          // Continuer même si l'envoi de l'email échoue
         }
-      } catch (emailError) {
-        // print('Erreur lors de l\'envoi de l\'email d\'invitation: $emailError');
-        // Continuer malgré l'erreur d'email, l'invitation est créée dans la DB
       }
       
-      return Invitation.fromJson(response);
+      return createdInvitation;
     } catch (e) {
       // print('Erreur lors de la création de l\'invitation: $e');
       rethrow;
@@ -1094,5 +1152,14 @@ class TeamService {
     } catch (e) {
       // print('Erreur lors de l\'envoi des notifications aux membres: $e');
     }
+  }
+
+  // Méthode pour générer un token d'invitation aléatoire
+  String _generateInvitationToken() {
+    // Génération d'un token simple pour les invitations
+    // Utilisez des caractères alphanumériques aléatoires pour un token de 24 caractères
+    final random = DateTime.now().millisecondsSinceEpoch.toString() + 
+                  DateTime.now().microsecondsSinceEpoch.toString();
+    return random.substring(0, 24);
   }
 }

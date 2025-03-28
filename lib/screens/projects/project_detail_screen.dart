@@ -9,8 +9,11 @@ import '../../services/team_service/team_service.dart';
 import '../../services/user_service.dart';
 import '../../services/phase_service/phase_service.dart';
 import '../../services/budget_service.dart';
+import '../../services/role_service.dart';
 import '../../widgets/islamic_patterns.dart';
 import '../../widgets/budget_summary_widget.dart';
+import '../../widgets/rbac_gated_screen.dart';
+import '../../widgets/permission_gated.dart';
 import '../tasks/task_form_screen.dart';
 import '../tasks/task_detail_screen.dart';
 import '../budget/budget_allocation_screen.dart';
@@ -37,6 +40,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   final UserService _userService = UserService();
   final PhaseService _phaseService = PhaseService();
   final BudgetService _budgetService = BudgetService();
+  final RoleService _roleService = RoleService();
   
   Project? _project;
   List<Task> _tasks = [];
@@ -340,72 +344,114 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: CustomAppBar(
-        title: _project?.name ?? 'Détails du projet',
-        showLogo: false,
-        actions: [
-          if (_project != null)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Actualiser',
-              onPressed: () {
-                setState(() {
-                  _isLoading = true;
-                });
-                _loadProjectDetails();
-              },
-            ),
-          if (_project != null)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ProjectFormScreen(
-                      project: _project,
-                    ),
-                  ),
-                );
-                if (result == true) {
-                  _loadProjectDetails();
-                }
-              },
-            ),
-          if (_project != null)
-            IconButton(
-              icon: const Icon(Icons.delete),
-              onPressed: () {
-                _showDeleteConfirmationDialog();
-              },
-            ),
-        ],
+    return RbacGatedScreen(
+      permissionName: 'read_project',
+      // Le paramètre projectId est retiré pour vérifier la permission globale
+      accessDeniedWidget: Scaffold(
+        appBar: AppBar(
+          title: const Text('Accès refusé'),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.lock,
+                size: 80,
+                color: Colors.red,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Vous n\'avez pas l\'autorisation d\'accéder à ce projet',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Veuillez contacter votre administrateur pour obtenir l\'accès',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  // Navigation à la page d'accueil
+                  Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+                },
+                child: const Text('Retour au tableau de bord'),
+              ),
+            ],
+          ),
+        ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _project == null
-              ? const Center(child: Text('Projet non trouvé'))
-              : _buildBody(),
-      floatingActionButton: _project != null
-          ? FloatingActionButton(
-              onPressed: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PhasesScreen(
-                      project: _project!,
-                    ),
-                  ),
-                );
-                if (result == true) {
-                  _loadProjectPhases();
-                }
-              },
-              tooltip: 'Ajouter une phase',
-              child: const Icon(Icons.add),
-            )
-          : null,
+      child: Scaffold(
+        appBar: CustomAppBar(
+          title: _project?.name ?? 'Détails du projet',
+          showLogo: false,
+          actions: [
+            if (_project != null)
+              PermissionGated(
+                permissionName: 'update_project',
+                projectId: widget.projectId,
+                child: IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ProjectFormScreen(project: _project),
+                      ),
+                    );
+                    if (result == true) {
+                      _loadProjectDetails();
+                    }
+                  },
+                ),
+              ),
+            if (_project != null)
+              PermissionGated(
+                permissionName: 'delete_project',
+                projectId: widget.projectId,
+                child: IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: () {
+                    _showDeleteConfirmationDialog();
+                  },
+                ),
+              ),
+          ],
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _project == null
+                ? const Center(child: Text('Projet non trouvé'))
+                : _buildBody(),
+        floatingActionButton: _project != null
+            ? PermissionGated(
+                permissionName: 'create_phase',
+                projectId: widget.projectId,
+                child: FloatingActionButton(
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PhasesScreen(
+                          project: _project!,
+                        ),
+                      ),
+                    );
+                    if (result == true) {
+                      _loadProjectPhases();
+                    }
+                  },
+                  tooltip: 'Ajouter une phase',
+                  child: const Icon(Icons.add),
+                ),
+              )
+            : null,
+      ),
     );
   }
 
@@ -643,22 +689,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
             ),
             if (!_isLoadingPhases && _projectPhases.isEmpty)
-              TextButton.icon(
-                onPressed: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => PhasesScreen(
-                        project: _project!,
+              PermissionGated(
+                permissionName: 'create_phase',
+                projectId: widget.projectId,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PhasesScreen(
+                          project: _project!,
+                        ),
                       ),
-                    ),
-                  );
-                  if (result == true) {
-                    _loadProjectPhases();
-                  }
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('Ajouter une phase'),
+                    );
+                    if (result == true) {
+                      _loadProjectPhases();
+                    }
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Ajouter une phase'),
+                ),
               ),
           ],
         ),
@@ -845,22 +895,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       });
                     },
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 20),
-                    onPressed: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PhasesScreen(
-                            project: _project!,
-                            initialPhase: phase,
+                  PermissionGated(
+                    permissionName: 'update_phase',
+                    projectId: phase.projectId,
+                    child: IconButton(
+                      icon: const Icon(Icons.edit, size: 20),
+                      onPressed: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => PhasesScreen(
+                              project: _project!,
+                              initialPhase: phase,
+                            ),
                           ),
-                        ),
-                      );
-                      if (result == true) {
-                        _loadProjectPhases();
-                      }
-                    },
+                        );
+                        if (result == true) {
+                          _loadProjectPhases();
+                        }
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -1010,6 +1064,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ),
             TextButton.icon(
               onPressed: () async {
+                // Vérifier la permission avant d'ouvrir le formulaire d'ajout de tâche
+                final hasPermission = await _roleService.hasPermission('create_task', projectId: _project!.id);
+                if (!hasPermission) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Vous n\'avez pas la permission de créer une tâche'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                  return;
+                }
+                
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -1326,6 +1394,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
               TextButton.icon(
                 onPressed: () async {
+                  // Vérifier la permission avant d'ouvrir le formulaire d'ajout de tâche
+                  final hasPermission = await _roleService.hasPermission('create_task', projectId: _project!.id);
+                  if (!hasPermission) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Vous n\'avez pas la permission de créer une tâche'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                  
                   final result = await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -1602,6 +1684,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ),
       child: InkWell(
         onTap: () async {
+          // Vérifier la permission avant d'ouvrir les détails de la tâche
+          final hasPermission = await _roleService.hasPermission('read_task', projectId: task.projectId);
+          if (!hasPermission) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Vous n\'avez pas la permission de voir cette tâche'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+          
           final result = await Navigator.push(
             context,
             MaterialPageRoute(

@@ -235,32 +235,8 @@ class _RolesAdminScreenState extends State<RolesAdminScreen> with SingleTickerPr
             ],
           ),
           onTap: () {
-            // Action facultative pour voir les détails du rôle utilisateur
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: Text('Détails du rôle utilisateur'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Utilisateur: ${userRole.userProfile?.getDisplayName() ?? userRole.userId}'),
-                    const SizedBox(height: 8),
-                    Text('Rôle: ${userRole.role?.getDisplayName() ?? "Inconnu"}'),
-                    const SizedBox(height: 8),
-                    Text('Contexte: ${_getRoleSubtitle(userRole)}'),
-                    const SizedBox(height: 8),
-                    Text('Date d\'attribution: ${userRole.getFormattedCreationDate()}'),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Fermer'),
-                  ),
-                ],
-              ),
-            );
+            // Modifier pour afficher la fenêtre d'édition au lieu des détails
+            _showEditUserRoleDialog(userRole);
           },
         ),
       ),
@@ -1155,5 +1131,209 @@ class _RolesAdminScreenState extends State<RolesAdminScreen> with SingleTickerPr
     if (result == true) {
       await _deleteUserRole(userRole);
     }
+  }
+
+  Future<void> _showEditUserRoleDialog(UserRole userRole) async {
+    String? selectedRoleId = userRole.roleId;
+    String? selectedTeamId = userRole.teamId;
+    String? selectedProjectId = userRole.projectId;
+    
+    // Récupérer la liste des équipes
+    List<Map<String, dynamic>> teams = [];
+    try {
+      final response = await Supabase.instance.client.from('teams').select('id, name').order('name');
+      teams = response;
+    } catch (e) {
+      print('Erreur lors de la récupération des équipes: $e');
+    }
+    
+    // Récupérer la liste des projets
+    List<Map<String, dynamic>> projects = [];
+    try {
+      final response = await Supabase.instance.client.from('projects').select('id, name').order('name');
+      projects = response;
+    } catch (e) {
+      print('Erreur lors de la récupération des projets: $e');
+    }
+    
+    if (!mounted) return;
+    
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Modifier le rôle de ${userRole.userProfile?.getDisplayName() ?? userRole.userId}'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 350,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Information de l'utilisateur
+                    Text(
+                      'Utilisateur: ${userRole.userProfile?.getDisplayName() ?? userRole.userId}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Text('Email: ${userRole.userProfile?.email ?? "Non disponible"}'),
+                    const SizedBox(height: 16),
+                    
+                    // Sélection du rôle
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Rôle',
+                        hintText: 'Sélectionnez un rôle',
+                      ),
+                      value: selectedRoleId,
+                      items: _roles.map((role) {
+                        return DropdownMenuItem<String>(
+                          value: role.id,
+                          child: Text(role.getDisplayName()),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          selectedRoleId = value;
+                        });
+                      },
+                      validator: (value) => value == null ? 'Veuillez sélectionner un rôle' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Contexte: Équipe (optionnel)
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Équipe (optionnel)',
+                        hintText: 'Sélectionnez une équipe',
+                      ),
+                      value: selectedTeamId,
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('Aucune équipe (global)'),
+                        ),
+                        ...teams.map((team) {
+                          return DropdownMenuItem<String>(
+                            value: team['id'],
+                            child: Text(team['name']),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          selectedTeamId = value;
+                          // Réinitialiser le projet si l'équipe change
+                          if (value != selectedTeamId) {
+                            selectedProjectId = null;
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Contexte: Projet (optionnel)
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Projet (optionnel)',
+                        hintText: 'Sélectionnez un projet',
+                      ),
+                      value: selectedProjectId,
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('Aucun projet'),
+                        ),
+                        ...projects
+                            .where((project) => selectedTeamId == null || 
+                                  project['team_id'] == selectedTeamId)
+                            .map((project) {
+                          return DropdownMenuItem<String>(
+                            value: project['id'],
+                            child: Text(project['name']),
+                          );
+                        }),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          selectedProjectId = value;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Annuler'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (selectedRoleId != null) {
+                      // Fermer le dialogue
+                      Navigator.of(context).pop();
+                      
+                      // Afficher un indicateur de chargement
+                      setState(() {
+                        _isLoading = true;
+                      });
+                      
+                      try {
+                        // Mettre à jour le rôle utilisateur
+                        await Supabase.instance.client
+                            .from('user_roles')
+                            .update({
+                              'role_id': selectedRoleId,
+                              'team_id': selectedTeamId,
+                              'project_id': selectedProjectId,
+                            })
+                            .eq('id', userRole.id);
+                        
+                        // Recharger les données pour afficher les modifications
+                        await _loadData();
+                        
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Rôle utilisateur mis à jour avec succès'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Erreur lors de la mise à jour: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } finally {
+                        // Masquer l'indicateur de chargement
+                        setState(() {
+                          _isLoading = false;
+                        });
+                      }
+                    } else {
+                      // Afficher un message si les champs requis ne sont pas remplis
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Veuillez sélectionner un rôle'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Enregistrer'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 }

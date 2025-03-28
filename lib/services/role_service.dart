@@ -27,30 +27,13 @@ class RoleService {
       final userRoles = (userRolesResponse as List).map((role) => role['roles']['name'] as String).toList();
       print('DEBUG: Rôles de l\'utilisateur: $userRoles');
       
-      // Vérifier directement les permissions associées aux rôles de l'utilisateur
+      // Si l'utilisateur est un admin système, accorder automatiquement toutes les permissions
       if (userRoles.contains('system_admin')) {
-        print('DEBUG: L\'utilisateur a le rôle system_admin, vérifions ses permissions');
-        // Pour le rôle system_admin, récupérer l'ID du rôle
-        final roleResponse = await _client.from('roles').select('id').eq('name', 'system_admin').single();
-        final roleId = roleResponse['id'] as String;
-        print('DEBUG: ID du rôle system_admin: $roleId');
-        
-        // Récupérer l'ID de la permission demandée
-        final permissionResponse = await _client.from('permissions').select('id').eq('name', permissionName).single();
-        final permissionId = permissionResponse['id'] as String;
-        print('DEBUG: ID de la permission $permissionName: $permissionId');
-        
-        // Vérifier directement dans role_permissions
-        final rolePermissionResponse = await _client
-            .from('role_permissions')
-            .select()
-            .eq('role_id', roleId)
-            .eq('permission_id', permissionId);
-        
-        print('DEBUG: Association role-permission trouvée: ${rolePermissionResponse.length > 0}');
-        print('DEBUG: Données role-permission: $rolePermissionResponse');
+        print('DEBUG: L\'utilisateur est system_admin, toutes les permissions sont accordées');
+        return true;
       }
-      
+
+      // Pour les autres rôles, vérifier dans la base de données      
       final response = await _client.rpc('user_has_permission', params: {
         'p_user_id': userId,
         'p_permission_name': permissionName,

@@ -4,12 +4,14 @@ import '../models/project_transaction_model.dart';
 import '../models/project_model.dart';
 import 'project_service/project_service.dart';
 import 'notification_service.dart';
+import 'role_service.dart';
 
 class ProjectFinanceService {
   final _supabase = Supabase.instance.client;
   final _uuid = Uuid();
   final ProjectService _projectService = ProjectService();
   final NotificationService _notificationService = NotificationService();
+  final RoleService _roleService = RoleService();
   
   // Exposer le client Supabase pour permettre l'accès à l'utilisateur courant
   SupabaseClient get supabaseClient => _supabase;
@@ -375,6 +377,16 @@ class ProjectFinanceService {
     String? notes, // Ajout du paramètre notes optionnel
   }) async {
     try {
+      // Vérifier si l'utilisateur a la permission de créer une transaction
+      final hasPermission = await _roleService.hasPermission(
+        'create_transaction',
+        projectId: projectId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de créer une transaction pour ce projet');
+      }
+      
       final userId = _supabase.auth.currentUser!.id;
       final now = DateTime.now().toUtc();
       final transactionId = _uuid.v4();
@@ -511,6 +523,16 @@ class ProjectFinanceService {
   // Mettre à jour une transaction
   Future<void> updateTransaction(ProjectTransaction transaction) async {
     try {
+      // Vérifier si l'utilisateur a la permission de mettre à jour une transaction
+      final hasPermission = await _roleService.hasPermission(
+        'update_transaction',
+        projectId: transaction.projectId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de modifier cette transaction');
+      }
+      
       final userId = _supabase.auth.currentUser!.id;
       final now = DateTime.now().toUtc();
       
@@ -592,6 +614,21 @@ class ProjectFinanceService {
           .single();
       
       final projectId = transactionResponse['project_id'] as String?;
+      
+      if (projectId == null) {
+        throw Exception('Transaction invalide : projet non spécifié');
+      }
+      
+      // Vérifier si l'utilisateur a la permission de supprimer une transaction
+      final hasPermission = await _roleService.hasPermission(
+        'delete_transaction', 
+        projectId: projectId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de supprimer cette transaction');
+      }
+      
       final amount = transactionResponse['amount'] as double;
       final category = transactionResponse['transaction_type'] as String;
       

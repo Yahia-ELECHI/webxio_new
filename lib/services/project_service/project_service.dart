@@ -6,6 +6,8 @@ import '../../models/task_history_model.dart';
 import '../../models/phase_model.dart';
 import '../notification_service.dart';
 import '../cache_service.dart';
+import '../role_service.dart';
+import '../auth_service.dart';
 
 class ProjectService {
   final SupabaseClient _client = SupabaseConfig.client;
@@ -15,6 +17,8 @@ class ProjectService {
   final String _taskHistoryTable = 'task_history';
   final NotificationService _notificationService = NotificationService();
   final CacheService _cacheService = CacheService();
+  final RoleService _roleService = RoleService();
+  final AuthService _authService = AuthService();
 
   // Récupérer tous les projets
   Future<List<Project>> getAllProjects() async {
@@ -138,6 +142,15 @@ class ProjectService {
   // Créer un nouveau projet
   Future<Project> createProject(Project project) async {
     try {
+      // Vérifier si l'utilisateur a la permission de créer un projet
+      final hasPermission = await _roleService.hasPermission(
+        'create_project',
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de créer un projet');
+      }
+      
       final response = await _client
           .from(_projectsTable)
           .insert(project.toJson())
@@ -159,6 +172,16 @@ class ProjectService {
   // Mettre à jour un projet
   Future<Project> updateProject(Project project) async {
     try {
+      // Vérifier si l'utilisateur a la permission de mettre à jour le projet
+      final hasPermission = await _roleService.hasPermission(
+        'update_project',
+        projectId: project.id,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de modifier ce projet');
+      }
+      
       // Récupérer l'ancien projet pour comparer le statut
       Project? oldProject;
       try {
@@ -199,21 +222,29 @@ class ProjectService {
       if (oldProject != null && 
           updatedProject.budgetAllocated != null && 
           updatedProject.budgetAllocated! > 0 && 
-          updatedProject.budgetConsumed != null) {
+          updatedProject.plannedBudget != null && updatedProject.plannedBudget! > 0) {
+        final percentage = (updatedProject.budgetAllocated! / updatedProject.plannedBudget!) * 100;
         
-        final percentage = (updatedProject.budgetConsumed! / updatedProject.budgetAllocated!) * 100;
-        
-        // Vérifier si nous avons dépassé des seuils importants (70%, 90%, 100%)
-        if (percentage >= 70) {
-          // Vérifier si nous avons franchi un nouveau seuil
-          final oldPercentage = oldProject.budgetConsumed != null && oldProject.budgetAllocated != null && oldProject.budgetAllocated! > 0
-              ? (oldProject.budgetConsumed! / oldProject.budgetAllocated!) * 100
-              : 0;
-          
-          // Envoyer une notification si nous franchissons un nouveau seuil
-          if ((oldPercentage < 70 && percentage >= 70) || 
-              (oldPercentage < 90 && percentage >= 90) || 
-              (oldPercentage < 100 && percentage >= 100)) {
+        // Si le budget alloué dépasse certains seuils du budget prévu, envoyer une alerte
+        if (percentage > 50 && percentage < 75) {
+          // Alerte à 50% (uniquement si on vient de dépasser ce seuil)
+          if (oldProject.budgetAllocated == null || 
+              oldProject.plannedBudget == null ||
+              (oldProject.budgetAllocated! / oldProject.plannedBudget!) * 100 < 50) {
+            await _notifyProjectBudgetAlert(updatedProject, percentage);
+          }
+        } else if (percentage >= 75 && percentage < 90) {
+          // Alerte à 75% (uniquement si on vient de dépasser ce seuil)
+          if (oldProject.budgetAllocated == null || 
+              oldProject.plannedBudget == null ||
+              (oldProject.budgetAllocated! / oldProject.plannedBudget!) * 100 < 75) {
+            await _notifyProjectBudgetAlert(updatedProject, percentage);
+          }
+        } else if (percentage >= 90) {
+          // Alerte à 90% (uniquement si on vient de dépasser ce seuil)
+          if (oldProject.budgetAllocated == null || 
+              oldProject.plannedBudget == null ||
+              (oldProject.budgetAllocated! / oldProject.plannedBudget!) * 100 < 90) {
             await _notifyProjectBudgetAlert(updatedProject, percentage);
           }
         }
@@ -229,17 +260,35 @@ class ProjectService {
   // Supprimer un projet
   Future<void> deleteProject(String projectId) async {
     try {
-      // Supprimer d'abord toutes les tâches associées au projet
-      await _client
-          .from(_tasksTable)
-          .delete()
-          .eq('project_id', projectId);
+      // Vérifier si l'utilisateur a la permission de supprimer le projet
+      final hasPermission = await _roleService.hasPermission(
+        'delete_project',
+        projectId: projectId,
+      );
       
-      // Puis supprimer le projet
-      await _client
-          .from(_projectsTable)
-          .delete()
-          .eq('id', projectId);
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de supprimer ce projet');
+      }
+      
+      // 1. Récupérer toutes les phases du projet
+      final phases = await getPhasesByProject(projectId);
+      
+      // 2. Pour chaque phase, supprimer toutes les tâches associées
+      for (var phase in phases) {
+        final tasks = await getTasksByPhase(phase.id);
+        for (var task in tasks) {
+          await deleteTask(task.id);
+        }
+        
+        // 3. Supprimer la phase
+        await _client.from(_phasesTable).delete().eq('id', phase.id);
+      }
+      
+      // 4. Supprimer toutes les associations d'équipes au projet
+      await _client.from('team_projects').delete().eq('project_id', projectId);
+      
+      // 5. Supprimer le projet lui-même
+      await _client.from(_projectsTable).delete().eq('id', projectId);
     } catch (e) {
       print('Erreur lors de la suppression du projet: $e');
       rethrow;

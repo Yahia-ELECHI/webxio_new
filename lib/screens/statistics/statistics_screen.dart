@@ -5,14 +5,18 @@ import 'package:lottie/lottie.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/project_model.dart';
 import '../../models/task_model.dart';
 import '../../models/phase_model.dart';
 import '../../models/budget_model.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/user_service.dart';
+import '../../services/role_service.dart';
 import '../../utils/app_colors.dart';
 import '../../widgets/empty_state_widget.dart';
+import '../../widgets/rbac_gated_screen.dart';
+import '../../widgets/permission_gated.dart';
 
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({Key? key}) : super(key: key);
@@ -24,6 +28,7 @@ class StatisticsScreen extends StatefulWidget {
 class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerProviderStateMixin {
   bool _isLoading = true;
   late TabController _tabController;
+  final RoleService _roleService = RoleService();
   
   // Animation pour les transitions d'onglets
   final _pageTransitionDuration = const Duration(milliseconds: 300);
@@ -64,6 +69,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadData();
+    
+    // Tracer les informations sur l'utilisateur au démarrage de l'écran
+    _logUserAccessInfo();
   }
   
   @override
@@ -294,47 +302,86 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
   
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Statistiques'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-            tooltip: 'Actualiser',
+    return RbacGatedScreen(
+      permissionName: 'read_all_projects',
+      onAccessDenied: () {
+        print('DEBUG: StatisticsScreen - onAccessDenied appelé');
+        // Afficher seulement un message dans la console sans redirection automatique
+        print('DEBUG: StatisticsScreen - Accès refusé, affichage de l\'écran d\'accès refusé');
+      },
+      accessDeniedWidget: Scaffold(
+        appBar: AppBar(
+          title: const Text('Accès refusé'),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.lock,
+                size: 80,
+                color: Colors.red,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Vous n\'avez pas l\'autorisation d\'accéder aux statistiques',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  // Navigation à la page d'accueil
+                  Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+                },
+                child: const Text('Retour au tableau de bord'),
+              ),
+            ],
           ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          indicatorWeight: 3.0,
-          labelStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14.0,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontWeight: FontWeight.normal,
-            fontSize: 14.0,
-          ),
-          tabs: const [
-            Tab(text: 'Aperçu'),
-            Tab(text: 'Projets'),
-            Tab(text: 'Activité'),
-          ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildOverviewTab(),
-                _buildProjectsTab(),
-                _buildActivityTab(),
-              ],
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Statistiques'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadData,
+              tooltip: 'Actualiser',
             ),
+          ],
+          bottom: TabBar(
+            controller: _tabController,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
+            indicatorWeight: 3.0,
+            labelStyle: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14.0,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.normal,
+              fontSize: 14.0,
+            ),
+            tabs: const [
+              Tab(text: 'Aperçu'),
+              Tab(text: 'Projets'),
+              Tab(text: 'Activité'),
+            ],
+          ),
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildOverviewTab(),
+                  _buildProjectsTab(),
+                  _buildActivityTab(),
+                ],
+              ),
+      ),
     );
   }
 
@@ -1115,6 +1162,77 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         return 'Urgente';
       default:
         return 'Inconnue';
+    }
+  }
+
+  /// Journalise les informations détaillées sur l'utilisateur pour le débogage RBAC
+  Future<void> _logUserAccessInfo() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) {
+        print('ERREUR: StatisticsScreen - Aucun utilisateur connecté');
+        return;
+      }
+      
+      print('\n===== INFORMATIONS D\'ACCÈS UTILISATEUR (StatisticsScreen) =====');
+      print('ID utilisateur: ${user.id}');
+      print('Email: ${user.email}');
+      
+      // Récupérer le profil utilisateur
+      final profileResponse = await Supabase.instance.client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .single();
+      
+      if (profileResponse != null) {
+        print('Nom: ${profileResponse['first_name']} ${profileResponse['last_name']}');
+      }
+      
+      // Récupérer les rôles de l'utilisateur
+      final userRolesResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('role_id, roles (name, description), team_id, project_id')
+          .eq('user_id', user.id);
+      
+      print('\nRôles attribués:');
+      if (userRolesResponse != null && userRolesResponse.isNotEmpty) {
+        for (var roleData in userRolesResponse) {
+          final roleName = roleData['roles']['name'];
+          final roleDesc = roleData['roles']['description'];
+          final teamId = roleData['team_id'];
+          final projectId = roleData['project_id'];
+          
+          print('- Rôle: $roleName ($roleDesc)');
+          if (teamId != null) print('  → Équipe: $teamId');
+          if (projectId != null) print('  → Projet: $projectId');
+          
+          // Récupérer toutes les permissions pour ce rôle
+          final rolePermissions = await Supabase.instance.client
+              .from('role_permissions')
+              .select('permissions (name, description)')
+              .eq('role_id', roleData['role_id']);
+          
+          if (rolePermissions != null && rolePermissions.isNotEmpty) {
+            print('  Permissions:');
+            for (var permData in rolePermissions) {
+              final permName = permData['permissions']['name'];
+              final permDesc = permData['permissions']['description'];
+              print('    • $permName: $permDesc');
+            }
+          }
+        }
+      } else {
+        print('Aucun rôle attribué à cet utilisateur.');
+      }
+      
+      // Vérifier spécifiquement la permission pour l'écran des statistiques
+      final hasStatisticsAccess = await _roleService.hasPermission('read_all_projects');
+      print('\nPermission "read_all_projects" (accès statistiques): ${hasStatisticsAccess ? 'ACCORDÉE' : 'REFUSÉE'}');
+      
+      print('============================================================\n');
+    } catch (e) {
+      print('ERREUR lors de la récupération des informations d\'accès: $e');
     }
   }
 }
