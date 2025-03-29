@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/team_model.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
 import '../../widgets/islamic_patterns.dart';
 
 class TeamMembersScreen extends StatefulWidget {
@@ -21,15 +22,77 @@ class TeamMembersScreen extends StatefulWidget {
 class _TeamMembersScreenState extends State<TeamMembersScreen> {
   final TeamService _teamService = TeamService();
   final AuthService _authService = AuthService();
+  final RoleService _roleService = RoleService();
   
   List<TeamMember> _members = [];
   bool _isLoading = true;
   String? _errorMessage;
+  bool _canManageMembers = false;
+  String _currentUserId = '';
 
   @override
   void initState() {
     super.initState();
     _loadMembers();
+    _checkPermissions();
+    _getCurrentUser();
+    
+    // Journalisation RBAC
+    _logUserAccessInfo();
+  }
+  
+  Future<void> _getCurrentUser() async {
+    final user = _authService.currentUser;
+    if (user != null) {
+      setState(() {
+        _currentUserId = user.id;
+      });
+    }
+  }
+  
+  Future<void> _checkPermissions() async {
+    try {
+      final canUpdateTeam = await _roleService.hasPermission('update_team', teamId: widget.team.id);
+      final canInviteMember = await _roleService.hasPermission('invite_team_member', teamId: widget.team.id);
+      
+      setState(() {
+        // Permission de gérer les membres si l'utilisateur peut mettre à jour l'équipe
+        // ou inviter des membres
+        _canManageMembers = canUpdateTeam || canInviteMember;
+      });
+    } catch (e) {
+      print('Erreur lors de la vérification des permissions: $e');
+    }
+  }
+
+  /// Journalise les informations détaillées sur l'utilisateur pour le débogage RBAC
+  Future<void> _logUserAccessInfo() async {
+    try {
+      final user = _authService.currentUser;
+      if (user == null) {
+        print('ERREUR: TeamMembersScreen - Aucun utilisateur connecté');
+        return;
+      }
+      
+      print('\n===== INFORMATIONS D\'ACCÈS UTILISATEUR (TeamMembersScreen) =====');
+      print('ID utilisateur: ${user.id}');
+      print('Email: ${user.email}');
+      print('Équipe consultée: ${widget.team.id} (${widget.team.name})');
+      
+      // Vérifier spécifiquement les permissions pour l'écran des membres d'équipe
+      final hasReadTeam = await _roleService.hasPermission('read_team', teamId: widget.team.id);
+      final hasUpdateTeam = await _roleService.hasPermission('update_team', teamId: widget.team.id);
+      final hasInviteTeamMember = await _roleService.hasPermission('invite_team_member', teamId: widget.team.id);
+      
+      print('\nPermissions pour cette équipe:');
+      print('- "read_team": ${hasReadTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+      print('- "update_team": ${hasUpdateTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+      print('- "invite_team_member": ${hasInviteTeamMember ? 'ACCORDÉE' : 'REFUSÉE'}');
+      
+      print('============================================================\n');
+    } catch (e) {
+      print('ERREUR lors de la récupération des informations d\'accès: $e');
+    }
   }
 
   Future<void> _loadMembers() async {
@@ -54,6 +117,21 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
   }
 
   void _showChangeRoleDialog(TeamMember member) {
+    if (!_canManageMembers) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vous n\'avez pas la permission de modifier les rôles des membres')),
+      );
+      return;
+    }
+    
+    // Ne pas permettre à un utilisateur de modifier son propre rôle
+    if (member.userId == _currentUserId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vous ne pouvez pas modifier votre propre rôle')),
+      );
+      return;
+    }
+    
     TeamMemberRole selectedRole = member.role;
     
     showDialog(
@@ -111,6 +189,21 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
   }
 
   void _showRemoveMemberDialog(TeamMember member) {
+    if (!_canManageMembers) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vous n\'avez pas la permission de retirer des membres')),
+      );
+      return;
+    }
+    
+    // Ne pas permettre à un utilisateur de se retirer lui-même
+    if (member.userId == _currentUserId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vous ne pouvez pas vous retirer vous-même de l\'équipe')),
+      );
+      return;
+    }
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -199,10 +292,15 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 8),
-                          const Text(
-                            'Invitez des membres pour collaborer sur vos projets',
-                            textAlign: TextAlign.center,
-                          ),
+                          widget.isAdmin
+                            ? const Text(
+                                'Invitez des membres pour collaborer',
+                                textAlign: TextAlign.center,
+                              )
+                            : const Text(
+                                'L\'administrateur de l\'équipe peut inviter des membres',
+                                textAlign: TextAlign.center,
+                              ),
                         ],
                       ),
                     )
@@ -211,7 +309,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                       itemCount: _members.length,
                       itemBuilder: (context, index) {
                         final member = _members[index];
-                        final isCurrentUser = member.userId == _authService.currentUser?.id;
+                        final isCurrentUser = member.userId == _currentUserId;
                         
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
@@ -274,7 +372,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                                 ),
                               ],
                             ),
-                            trailing: widget.isAdmin && !isCurrentUser
+                            trailing: (_canManageMembers && !isCurrentUser)
                                 ? PopupMenuButton<String>(
                                     onSelected: (value) {
                                       switch (value) {
@@ -309,7 +407,13 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
                                       ),
                                     ],
                                   )
-                                : null,
+                                : isCurrentUser 
+                                    ? const Chip(
+                                        label: Text('Vous'),
+                                        backgroundColor: Colors.blue,
+                                        labelStyle: TextStyle(color: Colors.white),
+                                      )
+                                    : null,
                           ),
                         );
                       },

@@ -22,16 +22,19 @@ class TeamsScreen extends StatefulWidget {
 class _TeamsScreenState extends State<TeamsScreen> {
   final TeamService _teamService = TeamService();
   final AuthService _authService = AuthService();
+  final RoleService _roleService = RoleService();
   
   List<Team> _teams = [];
   List<Invitation> _invitations = [];
   bool _isLoading = true;
   String? _errorMessage;
+  bool _canCreateTeam = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _checkPermissions();
     
     // Tracer les informations sur l'utilisateur au démarrage de l'écran
     _logUserAccessInfo();
@@ -60,13 +63,30 @@ class _TeamsScreenState extends State<TeamsScreen> {
     }
   }
 
+  Future<void> _checkPermissions() async {
+    try {
+      final canCreateTeam = await _roleService.hasPermission('create_team');
+      setState(() {
+        _canCreateTeam = canCreateTeam;
+      });
+    } catch (e) {
+      print('Erreur lors de la vérification des permissions: $e');
+    }
+  }
+
   void _showCreateTeamDialog() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const CreateTeamScreen(),
-      ),
-    ).then((_) => _loadData());
+    if (_canCreateTeam) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const CreateTeamScreen(),
+        ),
+      ).then((_) => _loadData());
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vous n\'avez pas la permission de créer une équipe')),
+      );
+    }
   }
 
   Future<void> _handleInvitation(Invitation invitation, bool accept) async {
@@ -160,17 +180,102 @@ class _TeamsScreenState extends State<TeamsScreen> {
         print('Aucun rôle attribué à cet utilisateur.');
       }
       
-      // Vérifier spécifiquement la permission pour l'écran des équipes
-      final hasTeamAccess = await Supabase.instance.client.rpc('user_has_permission', params: {
-        'p_user_id': user.id,
-        'p_permission_name': 'read_team',
-      });
-      print('\nPermission "read_team" (accès équipes): ${hasTeamAccess ? 'ACCORDÉE' : 'REFUSÉE'}');
+      // Vérifier spécifiquement les permissions pour l'écran des équipes
+      final hasReadTeam = await _roleService.hasPermission('read_team');
+      final hasCreateTeam = await _roleService.hasPermission('create_team');
+      
+      print('\nPermission "read_team" (accès équipes): ${hasReadTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+      print('Permission "create_team" (création équipes): ${hasCreateTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
       
       print('============================================================\n');
     } catch (e) {
       print('ERREUR lors de la récupération des informations d\'accès: $e');
     }
+  }
+
+  Widget _buildTeamsList() {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      child: CustomScrollView(
+        slivers: [
+          if (_invitations.isNotEmpty)
+            SliverToBoxAdapter(
+              child: ModernInvitationCard(
+                invitations: _invitations,
+                onInvitationAction: _handleInvitation,
+              ),
+            ),
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: _teams.isEmpty
+                ? SliverToBoxAdapter(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const IslamicPatternPlaceholder(
+                            size: 150,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Vous n\'avez pas encore d\'équipe',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Créez une équipe pour collaborer avec d\'autres utilisateurs',
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: _showCreateTeamDialog,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Créer une équipe'),
+                          ),
+                          const SizedBox(height: 8),
+                          ElevatedButton.icon(
+                            onPressed: _showJoinTeamDialog,
+                            icon: const Icon(Icons.join_inner),
+                            label: const Text('Rejoindre une équipe'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : SliverGrid(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 1.0,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final team = _teams[index];
+                        return ModernTeamCard(
+                          team: team,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => TeamDetailScreen(team: team),
+                              ),
+                            ).then((_) => _loadData());
+                          },
+                        );
+                      },
+                      childCount: _teams.length,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -205,148 +310,26 @@ class _TeamsScreenState extends State<TeamsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        _errorMessage!,
-                        style: const TextStyle(color: Colors.red),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadData,
-                        child: const Text('Réessayer'),
-                      ),
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadData,
-                  child: CustomScrollView(
-                    slivers: [
-                      if (_invitations.isNotEmpty)
-                        SliverToBoxAdapter(
-                          child: ModernInvitationCard(
-                            invitations: _invitations,
-                            onInvitationAction: _handleInvitation,
-                          ),
-                        ),
-                      SliverPadding(
-                        padding: const EdgeInsets.all(16),
-                        sliver: _teams.isEmpty
-                            ? SliverToBoxAdapter(
-                                child: Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const IslamicPatternPlaceholder(
-                                        size: 150,
-                                        color: Colors.grey,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      const Text(
-                                        'Vous n\'avez pas encore d\'équipe',
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      const Text(
-                                        'Créez une équipe pour collaborer avec d\'autres utilisateurs',
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      ElevatedButton.icon(
-                                        onPressed: _showCreateTeamDialog,
-                                        icon: const Icon(Icons.add),
-                                        label: const Text('Créer une équipe'),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      ElevatedButton.icon(
-                                        onPressed: _showJoinTeamDialog,
-                                        icon: const Icon(Icons.join_inner),
-                                        label: const Text('Rejoindre une équipe'),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              )
-                            : SliverGrid(
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 16,
-                                  childAspectRatio: 1.0,
-                                ),
-                                delegate: SliverChildBuilderDelegate(
-                                  (context, index) {
-                                    final team = _teams[index];
-                                    return ModernTeamCard(
-                                      team: team,
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => TeamDetailScreen(team: team),
-                                          ),
-                                        ).then((_) => _loadData());
-                                      },
-                                    );
-                                  },
-                                  childCount: _teams.length,
-                                ),
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Afficher un menu pour choisir l'action
-          showModalBottomSheet(
-            context: context, 
-            builder: (context) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Options d\'équipe',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    ListTile(
-                      leading: const Icon(Icons.add_circle_outline),
-                      title: const Text('Créer une équipe'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showCreateTeamDialog();
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.group_add),
-                      title: const Text('Rejoindre une équipe'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showJoinTeamDialog();
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-        tooltip: 'Options d\'équipe',
-        child: const Icon(Icons.add),
+              ? Center(child: Text(_errorMessage!))
+              : _buildTeamsList(),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (_canCreateTeam)
+            FloatingActionButton(
+              onPressed: _showCreateTeamDialog,
+              heroTag: 'createTeam',
+              tooltip: 'Créer une équipe',
+              child: const Icon(Icons.group_add),
+            ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            onPressed: _showJoinTeamDialog,
+            tooltip: 'Rejoindre une équipe',
+            heroTag: 'joinTeam',
+            child: const Icon(Icons.person_add),
+          ),
+        ],
       ),
     );
   }

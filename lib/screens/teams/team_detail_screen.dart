@@ -4,6 +4,7 @@ import '../../models/team_model.dart';
 import '../../models/project_model.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
 import '../../widgets/islamic_patterns.dart';
 import '../projects/project_detail_screen.dart';
 import 'team_members_screen.dart';
@@ -26,6 +27,7 @@ class TeamDetailScreen extends StatefulWidget {
 class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerProviderStateMixin {
   final TeamService _teamService = TeamService();
   final AuthService _authService = AuthService();
+  final RoleService _roleService = RoleService();
   
   late TabController _tabController;
   Team? _team;
@@ -35,18 +37,148 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   bool _isAdmin = false;
   String? _errorMessage;
 
+  // RBAC permissions
+  bool _canUpdateTeam = false;
+  bool _canDeleteTeam = false;
+  bool _canInviteTeamMember = false;
+  bool _canAddProject = false;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _team = widget.team;
     _loadTeamDetails();
+    _checkPermissions();
+    
+    // Tracer les informations sur l'utilisateur au démarrage de l'écran
+    _logUserAccessInfo();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkPermissions() async {
+    if (_team == null) return;
+    
+    try {
+      // Ajouter des logs pour le débogage
+      print('DEBUG: Vérification des permissions pour l\'équipe ${_team!.id}');
+      
+      final canUpdateTeam = await _roleService.hasPermission('update_team', teamId: _team!.id);
+      final canDeleteTeam = await _roleService.hasPermission('delete_team', teamId: _team!.id);
+      final canInviteTeamMember = await _roleService.hasPermission('invite_team_member', teamId: _team!.id);
+      final canCreateProject = await _roleService.hasPermission('create_project');
+      
+      print('DEBUG: Résultats des permissions:');
+      print('- update_team: $canUpdateTeam');
+      print('- delete_team: $canDeleteTeam');
+      print('- invite_team_member: $canInviteTeamMember');
+      print('- create_project: $canCreateProject');
+      
+      // Forcer _canInviteTeamMember à true si l'utilisateur est admin 
+      // pour s'assurer que le bouton apparaît
+      final isUserAdmin = await _teamService.isTeamAdmin(_team!.id);
+      final shouldShowInviteButton = canInviteTeamMember || isUserAdmin;
+      
+      print('DEBUG: Est admin de l\'équipe: $isUserAdmin');
+      print('DEBUG: Doit afficher le bouton d\'invitation: $shouldShowInviteButton');
+      
+      setState(() {
+        _canUpdateTeam = canUpdateTeam;
+        _canDeleteTeam = canDeleteTeam;
+        _canInviteTeamMember = shouldShowInviteButton; // Utiliser la valeur calculée
+        _canAddProject = canCreateProject;
+        _isAdmin = isUserAdmin; // S'assurer que _isAdmin est à jour
+      });
+    } catch (e) {
+      print('Erreur lors de la vérification des permissions: $e');
+    }
+  }
+
+  /// Journalise les informations détaillées sur l'utilisateur pour le débogage RBAC
+  Future<void> _logUserAccessInfo() async {
+    try {
+      final user = _authService.currentUser;
+      if (user == null) {
+        print('ERREUR: TeamDetailScreen - Aucun utilisateur connecté');
+        return;
+      }
+      
+      print('\n===== INFORMATIONS D\'ACCÈS UTILISATEUR (TeamDetailScreen) =====');
+      print('ID utilisateur: ${user.id}');
+      print('Email: ${user.email}');
+      print('Équipe consultée: ${_team?.id} (${_team?.name})');
+      
+      // Récupérer le profil utilisateur
+      // final profileResponse = await Supabase.instance.client
+      //     .from('profiles')
+      //     .select()
+      //     .eq('id', user.id)
+      //     .single();
+      
+      // if (profileResponse != null) {
+      //   print('Nom: ${profileResponse['first_name']} ${profileResponse['last_name']}');
+      // }
+      
+      // Récupérer les rôles de l'utilisateur
+      // final userRolesResponse = await Supabase.instance.client
+      //     .from('user_roles')
+      //     .select('role_id, roles (name, description), team_id, project_id')
+      //     .eq('user_id', user.id);
+      
+      // print('\nRôles attribués:');
+      // if (userRolesResponse != null && userRolesResponse.isNotEmpty) {
+      //   for (var roleData in userRolesResponse) {
+      //     final roleName = roleData['roles']['name'];
+      //     final roleDesc = roleData['roles']['description'];
+      //     final teamId = roleData['team_id'];
+      //     final projectId = roleData['project_id'];
+          
+      //     print('- Rôle: $roleName ($roleDesc)');
+      //     if (teamId != null) print('  → Équipe: $teamId');
+      //     if (projectId != null) print('  → Projet: $projectId');
+          
+      //     // Récupérer toutes les permissions pour ce rôle
+      //     final rolePermissions = await Supabase.instance.client
+      //         .from('role_permissions')
+      //         .select('permissions (name, description)')
+      //         .eq('role_id', roleData['role_id']);
+          
+      //     if (rolePermissions != null && rolePermissions.isNotEmpty) {
+      //       print('  Permissions:');
+      //       for (var permData in rolePermissions) {
+      //         final permName = permData['permissions']['name'];
+      //         final permDesc = permData['permissions']['description'];
+      //         print('    • $permName: $permDesc');
+      //       }
+      //     }
+      //   }
+      // } else {
+      //   print('Aucun rôle attribué à cet utilisateur.');
+      // }
+      
+      // Vérifier spécifiquement les permissions pour l'écran de détail d'équipe
+      if (_team != null) {
+        final hasReadTeam = await _roleService.hasPermission('read_team', teamId: _team!.id);
+        final hasUpdateTeam = await _roleService.hasPermission('update_team', teamId: _team!.id);
+        final hasDeleteTeam = await _roleService.hasPermission('delete_team', teamId: _team!.id);
+        final hasInviteTeamMember = await _roleService.hasPermission('invite_team_member', teamId: _team!.id);
+        
+        print('\nPermissions pour cette équipe:');
+        print('- "read_team": ${hasReadTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+        print('- "update_team": ${hasUpdateTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+        print('- "delete_team": ${hasDeleteTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+        print('- "invite_team_member": ${hasInviteTeamMember ? 'ACCORDÉE' : 'REFUSÉE'}');
+      }
+      
+      print('============================================================\n');
+    } catch (e) {
+      print('ERREUR lors de la récupération des informations d\'accès: $e');
+    }
   }
 
   Future<void> _loadTeamDetails() async {
@@ -84,6 +216,13 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   }
 
   void _showEditTeamDialog() {
+    if (!_canUpdateTeam) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vous n\'avez pas la permission de modifier cette équipe')),
+      );
+      return;
+    }
+    
     final nameController = TextEditingController(text: _team?.name);
     final descriptionController = TextEditingController(text: _team?.description);
     
@@ -162,6 +301,13 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   }
 
   void _showDeleteTeamDialog() {
+    if (!_canDeleteTeam) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vous n\'avez pas la permission de supprimer cette équipe')),
+      );
+      return;
+    }
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -221,7 +367,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     if (_team == null) return;
     
     Navigator.push(
-      context,
+      context, 
       MaterialPageRoute(
         builder: (context) => InviteMemberScreen(team: _team!),
       ),
@@ -328,140 +474,143 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   }
 
   Widget _buildMembersTab() {
-    if (_members.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const IslamicPatternPlaceholder(
-              size: 150,
-              color: Colors.grey,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Aucun membre dans cette équipe',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Invitez des membres pour collaborer sur vos projets',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            if (_isAdmin)
-              ElevatedButton.icon(
-                onPressed: _navigateToInviteMember,
-                icon: const Icon(Icons.person_add),
-                label: const Text('Inviter un membre'),
-              ),
-          ],
-        ),
-      );
+    if (_team == null) {
+      return const Center(child: Text('Erreur: Informations d\'équipe manquantes'));
     }
-
-    return RefreshIndicator(
-      onRefresh: _loadTeamDetails,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _members.length,
-        itemBuilder: (context, index) {
-          final member = _members[index];
-          final isCurrentUser = member.userId == _authService.currentUser?.id;
-          
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            elevation: 2,
-            child: ListTile(
-              leading: CircleAvatar(
-                child: Text(
-                  (member.userName ?? 'U').substring(0, 1).toUpperCase(),
+    
+    return _members.isEmpty
+        ? Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const IslamicPatternPlaceholder(
+                  size: 120,
+                  color: Colors.blueGrey,
                 ),
-              ),
-              title: Text(
-                member.userName ?? 'Utilisateur',
-                style: TextStyle(
-                  fontWeight: isCurrentUser ? FontWeight.bold : FontWeight.normal,
+                const SizedBox(height: 16),
+                const Text(
+                  'Aucun membre pour le moment',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(member.userEmail ?? 'Email non disponible'),
-                  const SizedBox(height: 4),
-                  Row(
+                const SizedBox(height: 8),
+                if (_canInviteTeamMember)
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      if (_team == null) return;
+                      
+                      Navigator.push(
+                        context, 
+                        MaterialPageRoute(
+                          builder: (context) => InviteMemberScreen(team: _team!),
+                        ),
+                      ).then((_) => _loadTeamDetails());
+                    },
+                    icon: const Icon(Icons.person_add),
+                    label: const Text('Inviter un membre'),
+                  ),
+              ],
+            ),
+          )
+        : ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: _members.length,
+            itemBuilder: (context, index) {
+              final member = _members[index];
+              final isCurrentUser = member.userId == _authService.currentUser?.id;
+              
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                elevation: 2,
+                child: ListTile(
+                  leading: CircleAvatar(
+                    child: Text(
+                      (member.userName ?? 'U').substring(0, 1).toUpperCase(),
+                    ),
+                  ),
+                  title: Text(
+                    member.userName ?? 'Utilisateur',
+                    style: TextStyle(
+                      fontWeight: isCurrentUser ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _getRoleColor(member.role).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          member.role.displayName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: _getRoleColor(member.role),
+                      Text(member.userEmail ?? 'Email non disponible'),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getRoleColor(member.role).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              member.role.displayName,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _getRoleColor(member.role),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _getStatusColor(member.status).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          member.status.displayName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: _getStatusColor(member.status),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getStatusColor(member.status).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              member.status.displayName,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _getStatusColor(member.status),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-              trailing: _isAdmin && !isCurrentUser
-                  ? PopupMenuButton<String>(
-                      onSelected: (value) {
-                        switch (value) {
-                          case 'change_role':
-                            _showChangeRoleDialog(member);
-                            break;
-                          case 'remove':
-                            _showRemoveMemberDialog(member);
-                            break;
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                          value: 'change_role',
-                          child: Text('Changer le rôle'),
-                        ),
-                        const PopupMenuItem(
-                          value: 'remove',
-                          child: Text('Retirer de l\'équipe', style: TextStyle(color: Colors.red)),
-                        ),
-                      ],
-                    )
-                  : null,
-            ),
+                  trailing: _canUpdateTeam && !isCurrentUser
+                      ? PopupMenuButton<String>(
+                          onSelected: (value) {
+                            switch (value) {
+                              case 'change_role':
+                                _showChangeRoleDialog(member);
+                                break;
+                              case 'remove':
+                                _showRemoveMemberDialog(member);
+                                break;
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'change_role',
+                              child: Text('Changer le rôle'),
+                            ),
+                            const PopupMenuItem(
+                              value: 'remove',
+                              child: Text('Retirer de l\'équipe', style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        )
+                      : null,
+                ),
+              );
+            },
           );
-        },
-      ),
-    );
   }
 
   Widget _buildProjectsTab() {
@@ -489,7 +638,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            if (_isAdmin)
+            if (_canAddProject)
               ElevatedButton.icon(
                 onPressed: _showAddProjectDialog,
                 icon: const Icon(Icons.add),
@@ -558,105 +707,99 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       appBar: AppBar(
         title: Text(_team?.name ?? 'Détails de l\'équipe'),
         actions: [
-          if (_isAdmin)
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                switch (value) {
-                  case 'edit':
-                    _showEditTeamDialog();
-                    break;
-                  case 'delete':
-                    _showDeleteTeamDialog();
-                    break;
-                  case 'invite':
-                    _navigateToInviteMember();
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit, size: 20),
-                      SizedBox(width: 8),
-                      Text('Modifier l\'équipe'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'invite',
-                  child: Row(
-                    children: [
-                      Icon(Icons.person_add, size: 20),
-                      SizedBox(width: 8),
-                      Text('Inviter un membre'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete, size: 20, color: Colors.red),
-                      SizedBox(width: 8),
-                      Text('Supprimer l\'équipe', style: TextStyle(color: Colors.red)),
-                    ],
-                  ),
-                ),
-              ],
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              _loadTeamDetails();
+              _checkPermissions();
+            },
+            tooltip: 'Actualiser',
+          ),
+          if (_canUpdateTeam)
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: _showEditTeamDialog,
+              tooltip: 'Modifier l\'équipe',
             ),
+          if (_canDeleteTeam)
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: _showDeleteTeamDialog,
+              tooltip: 'Supprimer l\'équipe',
+            ),
+          // Autres options du menu si nécessaire
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          indicatorWeight: 3.0,
-          labelStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14.0,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontWeight: FontWeight.normal,
-            fontSize: 14.0,
-          ),
-          tabs: const [
-            Tab(text: 'Membres'),
-            Tab(text: 'Projets'),
-          ],
-        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        _errorMessage!,
-                        style: const TextStyle(color: Colors.red),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadTeamDetails,
-                        child: const Text('Réessayer'),
-                      ),
-                    ],
-                  ),
-                )
-              : TabBarView(
-                  controller: _tabController,
+              ? Center(child: Text(_errorMessage!))
+              : Column(
                   children: [
-                    // Onglet Membres
-                    _buildMembersTab(),
-                    
-                    // Onglet Projets
-                    _buildProjectsTab(),
+                    // _buildHeader(),
+                    TabBar(
+                      controller: _tabController,
+                      tabs: const [
+                        Tab(text: 'Membres'),
+                        Tab(text: 'Projets'),
+                      ],
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildMembersTab(),
+                          _buildProjectsTab(),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
+      floatingActionButton: _buildFloatingActionButton(),
     );
+  }
+
+  Widget _buildFloatingActionButton() {
+    final currentTab = _tabController.index;
+    
+    // Logs supplémentaires
+    print('DEBUG: Construction du FAB - Tab: $currentTab, CanInvite: $_canInviteTeamMember, IsAdmin: $_isAdmin');
+    
+    // Si on est sur l'onglet des membres et l'utilisateur a la permission d'inviter
+    // OU est admin de l'équipe
+    if (currentTab == 0 && (_canInviteTeamMember || _isAdmin)) {
+      print('DEBUG: Affichage du bouton d\'invitation');
+      return FloatingActionButton(
+        onPressed: () {
+          if (_team == null) return;
+          
+          Navigator.push(
+            context, 
+            MaterialPageRoute(
+              builder: (context) => InviteMemberScreen(team: _team!),
+            ),
+          ).then((_) => _loadTeamDetails());
+        },
+        tooltip: 'Inviter un membre',
+        child: const Icon(Icons.person_add),
+      );
+    }
+    
+    // Si on est sur l'onglet des projets et l'utilisateur a la permission de créer un projet
+    if (currentTab == 1 && _canAddProject) {
+      return FloatingActionButton(
+        onPressed: () {
+          if (_team == null) return;
+          
+          // Afficher la boîte de dialogue pour ajouter un projet
+          _showAddProjectDialog();
+        },
+        tooltip: 'Ajouter un projet',
+        child: const Icon(Icons.add),
+      );
+    }
+    
+    // Si l'utilisateur n'a pas les permissions nécessaires, ne pas afficher de FAB
+    return Container();
   }
 }
