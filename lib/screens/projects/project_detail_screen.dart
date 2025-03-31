@@ -52,6 +52,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   bool _isLoadingTeams = true;
   bool _isLoadingPhases = true;
   bool _isLoadingBudget = true;
+  bool _hasProjectAccess = false; 
   String? _errorMessage;
   
   // État des phases dépliées/repliées
@@ -76,7 +77,117 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _loadProjectDetails();
+    _checkProjectAccess(); 
+  }
+
+  /// Vérifie si l'utilisateur a accès au projet actuel
+  Future<void> _checkProjectAccess() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Récupérer les rôles de l'utilisateur avec les projets associés
+      final userRolesDetails = await _roleService.getUserRolesDetails();
+      
+      // Vérifier si l'utilisateur a un rôle system_admin (accès global)
+      final isSystemAdmin = userRolesDetails.any((role) => role['role_name'] == 'system_admin');
+      
+      // Si l'utilisateur est admin système, il a un accès complet
+      if (isSystemAdmin) {
+        print('DEBUG: Utilisateur system_admin, accès au projet accordé');
+        setState(() {
+          _hasProjectAccess = true;
+        });
+        _loadProjectDetails(); 
+        return;
+      }
+      
+      // Vérifier si l'utilisateur a une permission directe sur ce projet spécifique
+      final hasProjectPermission = await _roleService.hasPermission(
+        'read_project',
+        projectId: widget.projectId
+      );
+      
+      if (hasProjectPermission) {
+        print('DEBUG: Utilisateur a une permission directe sur ce projet');
+        setState(() {
+          _hasProjectAccess = true;
+        });
+        _loadProjectDetails(); 
+        return;
+      }
+      
+      // Vérifier si l'utilisateur a un rôle associé à ce projet spécifique
+      final hasProjectRole = userRolesDetails.any((role) => 
+        role['project_id'] == widget.projectId
+      );
+      
+      if (hasProjectRole) {
+        print('DEBUG: Utilisateur a un rôle associé à ce projet');
+        setState(() {
+          _hasProjectAccess = true;
+        });
+        _loadProjectDetails(); 
+        return;
+      }
+      
+      // Vérifier si l'utilisateur pourrait accéder via une équipe associée au projet
+      final hasTeamAccess = await _checkTeamProjectAccess();
+      
+      if (hasTeamAccess) {
+        setState(() {
+          _hasProjectAccess = true;
+        });
+        _loadProjectDetails(); 
+        return;
+      }
+      
+      // Aucun accès trouvé
+      setState(() {
+        _hasProjectAccess = false;
+        _isLoading = false;
+      });
+      
+    } catch (e) {
+      print('ERROR: Erreur lors de la vérification de l\'accès au projet: $e');
+      setState(() {
+        _errorMessage = 'Erreur lors de la vérification de l\'accès au projet: $e';
+        _isLoading = false;
+        _hasProjectAccess = false;
+      });
+    }
+  }
+  
+  /// Vérifie si l'utilisateur a accès au projet via une équipe
+  Future<bool> _checkTeamProjectAccess() async {
+    try {
+      // Récupérer les équipes associées au projet
+      final projectTeams = await _teamService.getTeamsByProject(widget.projectId);
+      
+      if (projectTeams.isEmpty) {
+        return false;
+      }
+      
+      // Vérifier pour chaque équipe si l'utilisateur a la permission read_project dans cette équipe
+      for (final team in projectTeams) {
+        final hasTeamPermission = await _roleService.hasPermission(
+          'read_project',
+          teamId: team.id
+        );
+        
+        if (hasTeamPermission) {
+          print('DEBUG: Utilisateur a accès au projet via l\'équipe ${team.id}');
+          return true;
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      print('ERROR: Erreur lors de la vérification de l\'accès via équipes: $e');
+      return false;
+    }
   }
 
   Future<void> _loadProjectDetails() async {
@@ -344,118 +455,144 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RbacGatedScreen(
-      permissionName: 'read_project',
-      // Le paramètre projectId est retiré pour vérifier la permission globale
-      accessDeniedWidget: Scaffold(
-        appBar: AppBar(
-          title: const Text('Accès refusé'),
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.lock,
-                size: 80,
-                color: Colors.red,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Vous n\'avez pas l\'autorisation d\'accéder à ce projet',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Veuillez contacter votre administrateur pour obtenir l\'accès',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  // Navigation à la page d'accueil
-                  Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
-                },
-                child: const Text('Retour au tableau de bord'),
-              ),
-            ],
+    return Scaffold(
+      appBar: CustomAppBar(
+        title: _project?.name ?? 'Détails du projet',
+        actions: _hasProjectAccess && _project != null ? [
+          // Action d'édition (si l'utilisateur a la permission)
+          PermissionGated(
+            permissionName: 'update_project',
+            projectId: widget.projectId,
+            child: IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProjectFormScreen(project: _project),
+                  ),
+                );
+                if (result == true) {
+                  _loadProjectDetails();
+                }
+              },
+            ),
           ),
-        ),
+          // Action de suppression (si l'utilisateur a la permission)
+          PermissionGated(
+            permissionName: 'delete_project',
+            projectId: widget.projectId,
+            child: IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: () {
+                _showDeleteConfirmationDialog();
+              },
+            ),
+          ),
+        ] : null,
       ),
-      child: Scaffold(
-        appBar: CustomAppBar(
-          title: _project?.name ?? 'Détails du projet',
-          showLogo: false,
-          actions: [
-            if (_project != null)
-              PermissionGated(
-                permissionName: 'update_project',
-                projectId: widget.projectId,
-                child: IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () async {
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ProjectFormScreen(project: _project),
-                      ),
-                    );
-                    if (result == true) {
-                      _loadProjectDetails();
-                    }
-                  },
-                ),
-              ),
-            if (_project != null)
-              PermissionGated(
-                permissionName: 'delete_project',
-                projectId: widget.projectId,
-                child: IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: () {
-                    _showDeleteConfirmationDialog();
-                  },
-                ),
-              ),
-          ],
-        ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _project == null
-                ? const Center(child: Text('Projet non trouvé'))
-                : _buildBody(),
-        floatingActionButton: _project != null
-            ? PermissionGated(
-                permissionName: 'create_phase',
-                projectId: widget.projectId,
-                child: FloatingActionButton(
-                  onPressed: () async {
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PhasesScreen(
-                          project: _project!,
-                        ),
-                      ),
-                    );
-                    if (result == true) {
-                      _loadProjectPhases();
-                    }
-                  },
-                  tooltip: 'Ajouter une phase',
-                  child: const Icon(Icons.add),
-                ),
-              )
-            : null,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? _buildErrorWidget()
+              : !_hasProjectAccess
+                  ? _buildAccessDeniedWidget()
+                  : _buildProjectDetails(),
+      floatingActionButton: _hasProjectAccess && _project != null
+        ? PermissionGated(
+            permissionName: 'create_phase',
+            projectId: widget.projectId,
+            child: FloatingActionButton(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PhasesScreen(
+                      project: _project!,
+                    ),
+                  ),
+                );
+                if (result == true) {
+                  _loadProjectPhases();
+                }
+              },
+              tooltip: 'Ajouter une phase',
+              child: const Icon(Icons.add),
+            ),
+          )
+        : null,
+    );
+  }
+  
+  Widget _buildAccessDeniedWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.lock,
+            size: 64,
+            color: Colors.grey,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Accès refusé',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              'Vous n\'avez pas l\'autorisation d\'accéder à ce projet.\nContactez un administrateur si vous pensez qu\'il s\'agit d\'une erreur.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Retour'),
+          ),
+        ],
       ),
     );
   }
-
-  Widget _buildBody() {
+  
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.error_outline,
+            color: Colors.red,
+            size: 48,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Erreur',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              _errorMessage ?? 'Une erreur inconnue est survenue',
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _checkProjectAccess,
+            child: const Text('Réessayer'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildProjectDetails() {
     return RefreshIndicator(
       onRefresh: () async {
         _loadProjectDetails();

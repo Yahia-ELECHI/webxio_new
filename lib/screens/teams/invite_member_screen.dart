@@ -4,6 +4,8 @@ import 'package:uuid/uuid.dart';
 import '../../models/team_model.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
+import '../../models/role.dart';
 
 class InviteMemberScreen extends StatefulWidget {
   final Team team;
@@ -20,25 +22,94 @@ class InviteMemberScreen extends StatefulWidget {
 class _InviteMemberScreenState extends State<InviteMemberScreen> {
   final TeamService _teamService = TeamService();
   final AuthService _authService = AuthService();
+  final RoleService _roleService = RoleService();
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   
-  TeamMemberRole _selectedRole = TeamMemberRole.member;
+  String _selectedRoleId = ''; // ID du rôle sélectionné (système RBAC)
+  String _selectedRoleName = ''; // Nom du rôle sélectionné (pour affichage)
+  List<Role> _availableRoles = []; // Rôles disponibles dans le système RBAC
+  
   List<Invitation> _pendingInvitations = [];
   bool _isLoading = false;
   bool _isLoadingInvitations = true;
+  bool _isLoadingRoles = true;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
     _loadPendingInvitations();
+    _loadAvailableRoles();
   }
 
   @override
   void dispose() {
     _emailController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadAvailableRoles() async {
+    setState(() {
+      _isLoadingRoles = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Vérifier si l'utilisateur actuel est un administrateur système
+      bool isSystemAdmin = false;
+      
+      try {
+        // Récupérer les rôles de l'utilisateur actuel
+        final userRolesDetails = await _roleService.getUserRolesDetails();
+        isSystemAdmin = userRolesDetails.any((roleDetail) => 
+          roleDetail['role_name'] == 'system_admin'
+        );
+        
+        print('DEBUG: L\'utilisateur est-il system_admin? $isSystemAdmin');
+      } catch (e) {
+        print('Erreur lors de la vérification des rôles de l\'utilisateur: $e');
+      }
+      
+      // Récupérer tous les rôles disponibles via le RoleService
+      final allRoles = await _roleService.getAllRoles();
+      
+      // Filtrer les rôles selon les règles de sécurité:
+      // - Si l'utilisateur est un administrateur système, il peut voir et attribuer tous les rôles
+      // - Sinon, il ne peut pas voir ni attribuer le rôle system_admin
+      List<Role> filteredRoles = allRoles.where((role) {
+        if (isSystemAdmin) {
+          // Un admin peut voir tous les rôles
+          return true;
+        } else {
+          // Les autres ne peuvent pas voir ni attribuer le rôle system_admin
+          return role.name != 'system_admin';
+        }
+      }).toList();
+      
+      setState(() {
+        _availableRoles = filteredRoles;
+        
+        // Sélectionner un rôle par défaut approprié
+        // Préférer team_member si disponible, sinon prendre le premier rôle
+        final defaultRole = filteredRoles.firstWhere(
+          (role) => role.name == 'team_member',
+          orElse: () => filteredRoles.isNotEmpty ? filteredRoles.first : Role(
+            id: '', 
+            name: 'Aucun rôle disponible'
+          ),
+        );
+        
+        _selectedRoleId = defaultRole.id;
+        _selectedRoleName = defaultRole.name;
+        _isLoadingRoles = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Erreur lors du chargement des rôles: $e';
+        _isLoadingRoles = false;
+      });
+    }
   }
 
   Future<void> _loadPendingInvitations() async {
@@ -94,20 +165,27 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
         return;
       }
 
-      // Générer un token unique pour l'invitation
-      final token = const Uuid().v4();
+      // Vérifier que le rôle sélectionné est valide
+      if (_selectedRoleId.isEmpty) {
+        setState(() {
+          _errorMessage = 'Veuillez sélectionner un rôle valide';
+          _isLoading = false;
+        });
+        return;
+      }
       
-      // Créer l'invitation
+      // Créer l'invitation avec les métadonnées RBAC
       final invitation = Invitation(
-        id: const Uuid().v4(),
         email: email,
         teamId: widget.team.id,
         invitedBy: currentUser.id,
         createdAt: DateTime.now(),
         expiresAt: DateTime.now().add(const Duration(days: 7)),
-        token: token,
-        status: InvitationStatus.pending,
         teamName: widget.team.name,
+        metadata: {
+          'role_id': _selectedRoleId,
+          'role_name': _selectedRoleName
+        }
       );
       
       await _teamService.createInvitation(invitation);
@@ -124,7 +202,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
       
       // Afficher un message de succès
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Invitation envoyée à $email')),
+        SnackBar(content: Text('Invitation envoyée à $email avec le rôle $_selectedRoleName')),
       );
     } catch (e) {
       setState(() {
@@ -222,26 +300,43 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
                           },
                         ),
                         const SizedBox(height: 16),
-                        DropdownButtonFormField<TeamMemberRole>(
-                          value: _selectedRole,
-                          decoration: const InputDecoration(
-                            labelText: 'Rôle',
-                            prefixIcon: Icon(Icons.person),
-                          ),
-                          items: TeamMemberRole.values.map((role) {
-                            return DropdownMenuItem<TeamMemberRole>(
-                              value: role,
-                              child: Text(role.displayName),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                _selectedRole = value;
-                              });
-                            }
-                          },
-                        ),
+                        _isLoadingRoles 
+                          ? const Center(child: CircularProgressIndicator())
+                          : DropdownButtonFormField<String>(
+                              value: _selectedRoleId.isEmpty ? null : _selectedRoleId,
+                              decoration: const InputDecoration(
+                                labelText: 'Rôle',
+                                prefixIcon: Icon(Icons.person),
+                              ),
+                              items: _availableRoles.map((role) {
+                                // Utiliser la méthode getDisplayName de la classe Role
+                                String displayName = role.getDisplayName();
+                                
+                                return DropdownMenuItem<String>(
+                                  value: role.id,
+                                  child: Text(displayName),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    _selectedRoleId = value;
+                                    // Trouver le nom du rôle correspondant
+                                    final selectedRole = _availableRoles.firstWhere(
+                                      (role) => role.id == value,
+                                      orElse: () => Role(id: '', name: ''),
+                                    );
+                                    _selectedRoleName = selectedRole.name;
+                                  });
+                                }
+                              },
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Veuillez sélectionner un rôle';
+                                }
+                                return null;
+                              },
+                            ),
                         const SizedBox(height: 24),
                         if (_errorMessage != null)
                           Padding(
@@ -301,37 +396,50 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
                           itemCount: _pendingInvitations.length,
                           itemBuilder: (context, index) {
                             final invitation = _pendingInvitations[index];
+                            // Récupérer le nom du rôle à partir des métadonnées s'il existe
+                            String roleName = 'Membre';
+                            if (invitation.metadata != null && invitation.metadata!.containsKey('role_name')) {
+                              String rawRoleName = invitation.metadata!['role_name'];
+                              // Formatter le nom de rôle pour l'affichage
+                              for (var role in _availableRoles) {
+                                if (role.name == rawRoleName) {
+                                  roleName = role.getDisplayName();
+                                  break;
+                                }
+                              }
+                            }
                             
                             return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
                               elevation: 1,
+                              margin: const EdgeInsets.only(bottom: 8),
                               child: ListTile(
                                 title: Text(invitation.email),
-                                subtitle: Text(
-                                  'Expire le ${invitation.expiresAt.day}/${invitation.expiresAt.month}/${invitation.expiresAt.year}',
-                                ),
+                                subtitle: Text('Rôle: $roleName'),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
-                                      icon: const Icon(Icons.copy, size: 20),
+                                      icon: const Icon(Icons.copy),
+                                      tooltip: 'Copier le code d\'invitation',
                                       onPressed: () {
                                         Clipboard.setData(ClipboardData(text: invitation.token));
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Token copié dans le presse-papier')),
+                                          const SnackBar(
+                                            content: Text('Code d\'invitation copié dans le presse-papier'),
+                                            duration: Duration(seconds: 2),
+                                          ),
                                         );
                                       },
-                                      tooltip: 'Copier le token',
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.refresh, size: 20),
-                                      onPressed: () => _resendInvitation(invitation),
+                                      icon: const Icon(Icons.refresh),
                                       tooltip: 'Renvoyer l\'invitation',
+                                      onPressed: () => _resendInvitation(invitation),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                                      onPressed: () => _cancelInvitation(invitation),
+                                      icon: const Icon(Icons.delete),
                                       tooltip: 'Annuler l\'invitation',
+                                      onPressed: () => _cancelInvitation(invitation),
                                     ),
                                   ],
                                 ),

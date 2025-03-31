@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'dart:convert';
 
 class Team {
   final String id;
@@ -282,36 +283,40 @@ class Invitation {
   final String token;
   final InvitationStatus status;
   final String? teamName;
+  final Map<String, dynamic>? metadata;
 
   Invitation({
-    required this.id,
+    this.id = '',
     required this.email,
     required this.teamId,
     required this.invitedBy,
     required this.createdAt,
     required this.expiresAt,
-    required this.token,
-    required this.status,
+    this.token = '',
+    this.status = InvitationStatus.pending,
     this.teamName,
+    this.metadata,
   });
 
   factory Invitation.fromJson(Map<String, dynamic> json) {
     return Invitation(
-      id: json['id'],
-      email: json['email'],
-      teamId: json['team_id'],
-      invitedBy: json['invited_by'],
-      createdAt: DateTime.parse(json['created_at']),
-      expiresAt: DateTime.parse(json['expires_at']),
-      token: json['token'],
-      status: InvitationStatus.fromString(json['status']),
+      id: json['id'] ?? '',
+      email: json['email'] ?? '',
+      teamId: json['team_id'] ?? '',
+      invitedBy: json['invited_by'] ?? '',
+      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
+      expiresAt: DateTime.parse(json['expires_at'] ?? DateTime.now().add(const Duration(days: 7)).toIso8601String()),
+      token: json['token'] ?? '',
+      status: InvitationStatus.fromString(json['status'] ?? 'pending'),
       teamName: json['team_name'],
+      metadata: json['metadata'] is String && json['metadata'] != '' 
+          ? jsonDecode(json['metadata']) 
+          : (json['metadata'] is Map ? json['metadata'] : null),
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
+    final Map<String, dynamic> data = {
       'email': email,
       'team_id': teamId,
       'invited_by': invitedBy,
@@ -320,9 +325,19 @@ class Invitation {
       'token': token,
       'status': status.toValue(),
     };
+    
+    // N'ajouter l'ID que s'il n'est pas vide
+    if (id.isNotEmpty) {
+      data['id'] = id;
+    }
+    
+    // Ajouter les métadonnées si elles existent
+    if (metadata != null) {
+      data['metadata'] = jsonEncode(metadata);
+    }
+    
+    return data;
   }
-
-  bool get isExpired => DateTime.now().isAfter(expiresAt);
 
   Invitation copyWith({
     String? id,
@@ -334,6 +349,7 @@ class Invitation {
     String? token,
     InvitationStatus? status,
     String? teamName,
+    Map<String, dynamic>? metadata,
   }) {
     return Invitation(
       id: id ?? this.id,
@@ -345,15 +361,9 @@ class Invitation {
       token: token ?? this.token,
       status: status ?? this.status,
       teamName: teamName ?? this.teamName,
+      metadata: metadata ?? this.metadata,
     );
   }
 
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is Invitation && other.id == id;
-  }
-
-  @override
-  int get hashCode => id.hashCode;
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
 }

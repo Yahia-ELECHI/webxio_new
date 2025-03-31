@@ -79,23 +79,19 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       print('- invite_team_member: $canInviteTeamMember');
       print('- create_project: $canCreateProject');
       
-      // Forcer _canInviteTeamMember à true si l'utilisateur est admin 
-      // pour s'assurer que le bouton apparaît
-      final isUserAdmin = await _teamService.isTeamAdmin(_team!.id);
-      final shouldShowInviteButton = canInviteTeamMember || isUserAdmin;
-      
-      print('DEBUG: Est admin de l\'équipe: $isUserAdmin');
-      print('DEBUG: Doit afficher le bouton d\'invitation: $shouldShowInviteButton');
-      
+      // Ne plus utiliser le système legacy, faire confiance au système RBAC
       setState(() {
         _canUpdateTeam = canUpdateTeam;
         _canDeleteTeam = canDeleteTeam;
-        _canInviteTeamMember = shouldShowInviteButton; // Utiliser la valeur calculée
+        _canInviteTeamMember = canInviteTeamMember;
         _canAddProject = canCreateProject;
-        _isAdmin = isUserAdmin; // S'assurer que _isAdmin est à jour
+        _isLoading = false;
       });
     } catch (e) {
       print('Erreur lors de la vérification des permissions: $e');
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -111,67 +107,60 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       print('\n===== INFORMATIONS D\'ACCÈS UTILISATEUR (TeamDetailScreen) =====');
       print('ID utilisateur: ${user.id}');
       print('Email: ${user.email}');
-      print('Équipe consultée: ${_team?.id} (${_team?.name})');
-      
-      // Récupérer le profil utilisateur
-      // final profileResponse = await Supabase.instance.client
-      //     .from('profiles')
-      //     .select()
-      //     .eq('id', user.id)
-      //     .single();
-      
-      // if (profileResponse != null) {
-      //   print('Nom: ${profileResponse['first_name']} ${profileResponse['last_name']}');
-      // }
-      
-      // Récupérer les rôles de l'utilisateur
-      // final userRolesResponse = await Supabase.instance.client
-      //     .from('user_roles')
-      //     .select('role_id, roles (name, description), team_id, project_id')
-      //     .eq('user_id', user.id);
-      
-      // print('\nRôles attribués:');
-      // if (userRolesResponse != null && userRolesResponse.isNotEmpty) {
-      //   for (var roleData in userRolesResponse) {
-      //     final roleName = roleData['roles']['name'];
-      //     final roleDesc = roleData['roles']['description'];
-      //     final teamId = roleData['team_id'];
-      //     final projectId = roleData['project_id'];
-          
-      //     print('- Rôle: $roleName ($roleDesc)');
-      //     if (teamId != null) print('  → Équipe: $teamId');
-      //     if (projectId != null) print('  → Projet: $projectId');
-          
-      //     // Récupérer toutes les permissions pour ce rôle
-      //     final rolePermissions = await Supabase.instance.client
-      //         .from('role_permissions')
-      //         .select('permissions (name, description)')
-      //         .eq('role_id', roleData['role_id']);
-          
-      //     if (rolePermissions != null && rolePermissions.isNotEmpty) {
-      //       print('  Permissions:');
-      //       for (var permData in rolePermissions) {
-      //         final permName = permData['permissions']['name'];
-      //         final permDesc = permData['permissions']['description'];
-      //         print('    • $permName: $permDesc');
-      //       }
-      //     }
-      //   }
-      // } else {
-      //   print('Aucun rôle attribué à cet utilisateur.');
-      // }
-      
-      // Vérifier spécifiquement les permissions pour l'écran de détail d'équipe
       if (_team != null) {
-        final hasReadTeam = await _roleService.hasPermission('read_team', teamId: _team!.id);
-        final hasUpdateTeam = await _roleService.hasPermission('update_team', teamId: _team!.id);
-        final hasDeleteTeam = await _roleService.hasPermission('delete_team', teamId: _team!.id);
-        final hasInviteTeamMember = await _roleService.hasPermission('invite_team_member', teamId: _team!.id);
-        
+        print('Équipe consultée: ${_team!.id} (${_team!.name})');
+      }
+      
+      // Récupérer le profil utilisateur via le service d'équipe
+      final userProfile = await _teamService.getUserProfile(user.id);
+      if (userProfile != null) {
+        print('Nom: ${userProfile['display_name'] ?? 'Non défini'}');
+      }
+      
+      // Récupérer les informations de rôle via la fonction RPC
+      final userRoles = await _roleService.getUserRolesWithDetails(user.id);
+      
+      print('\nRôles attribués:');
+      if (userRoles != null && userRoles.isNotEmpty) {
+        for (var roleData in userRoles) {
+          final roleName = roleData['roles']['name'];
+          final roleDesc = roleData['roles']['description'];
+          final teamId = roleData['team_id'];
+          final projectId = roleData['project_id'];
+          
+          print('- Rôle: $roleName ($roleDesc)');
+          if (teamId != null) print('  → Équipe: $teamId');
+          if (projectId != null) print('  → Projet: $projectId');
+          
+          // Récupérer les permissions pour ce rôle
+          final permissions = await _roleService.getRolePermissions(roleData['role_id']);
+          
+          if (permissions != null && permissions.isNotEmpty) {
+            print('  Permissions:');
+            for (var permData in permissions) {
+              final permName = permData['permissions']['name'];
+              final permDesc = permData['permissions']['description'];
+              print('    • $permName: $permDesc');
+            }
+          }
+        }
+      } else {
+        print('Aucun rôle attribué à cet utilisateur.');
+      }
+      
+      // Vérifier les permissions spécifiques pour cet écran
+      if (_team != null) {
         print('\nPermissions pour cette équipe:');
+        final hasReadTeam = await _roleService.hasPermission('read_team', teamId: _team!.id);
         print('- "read_team": ${hasReadTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+        
+        final hasUpdateTeam = await _roleService.hasPermission('update_team', teamId: _team!.id);
         print('- "update_team": ${hasUpdateTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+        
+        final hasDeleteTeam = await _roleService.hasPermission('delete_team', teamId: _team!.id);
         print('- "delete_team": ${hasDeleteTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+        
+        final hasInviteTeamMember = await _roleService.hasPermission('invite_team_member', teamId: _team!.id);
         print('- "invite_team_member": ${hasInviteTeamMember ? 'ACCORDÉE' : 'REFUSÉE'}');
       }
       
@@ -191,9 +180,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       // Charger les détails de l'équipe
       final team = await _teamService.getTeam(_team!.id);
       
-      // Vérifier si l'utilisateur est administrateur
-      final isAdmin = await _teamService.isTeamAdmin(_team!.id);
-      
       // Charger les membres de l'équipe
       final members = await _teamService.getTeamMembers(_team!.id);
       
@@ -202,7 +188,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       
       setState(() {
         _team = team;
-        _isAdmin = isAdmin;
         _members = members;
         _projects = projects;
         _isLoading = false;
@@ -763,11 +748,10 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     final currentTab = _tabController.index;
     
     // Logs supplémentaires
-    print('DEBUG: Construction du FAB - Tab: $currentTab, CanInvite: $_canInviteTeamMember, IsAdmin: $_isAdmin');
+    print('DEBUG: Construction du FAB - Tab: $currentTab, CanInvite: $_canInviteTeamMember');
     
     // Si on est sur l'onglet des membres et l'utilisateur a la permission d'inviter
-    // OU est admin de l'équipe
-    if (currentTab == 0 && (_canInviteTeamMember || _isAdmin)) {
+    if (currentTab == 0 && _canInviteTeamMember) {
       print('DEBUG: Affichage du bouton d\'invitation');
       return FloatingActionButton(
         onPressed: () {
