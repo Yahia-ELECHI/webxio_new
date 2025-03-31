@@ -56,6 +56,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   late Task _task;
   bool _isLoading = false;
   String? _errorMessage;
+  bool _hasTaskAccess = false; // Ajout de l'état d'accès à la tâche
   List<Team> _assignedTeams = [];
   bool _loadingTeams = true;
   Map<String, String> _userDisplayNames = {};
@@ -74,18 +75,115 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   void initState() {
     super.initState();
     _task = widget.task;
-    _loadAssignedTeams();
-    _loadUserDisplayNames();
-    _loadTaskHistory();
-    _loadAttachments();
-    _loadTaskBudget();
-    _loadComments();
+    _checkTaskAccess(); // Vérifier les permissions d'abord
   }
 
-  @override
-  void dispose() {
-    _commentController.dispose();
-    super.dispose();
+  /// Vérifie si l'utilisateur a accès à la tâche
+  Future<void> _checkTaskAccess() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Récupérer les rôles de l'utilisateur avec les projets associés
+      final userRolesDetails = await _roleService.getUserRolesDetails();
+      
+      // Vérifier si l'utilisateur a un rôle system_admin (accès global)
+      final isSystemAdmin = userRolesDetails.any((role) => role['role_name'] == 'system_admin');
+      
+      // Si l'utilisateur est admin système, il a un accès complet
+      if (isSystemAdmin) {
+        print('DEBUG: Utilisateur system_admin, accès à la tâche accordé');
+        setState(() {
+          _hasTaskAccess = true;
+        });
+        await _loadAllTaskData();
+        return;
+      }
+      
+      // Vérifier si l'utilisateur a une permission directe sur cette tâche dans le contexte du projet
+      final hasTaskPermission = await _roleService.hasPermission(
+        'read_task',
+        projectId: _task.projectId
+      );
+      
+      if (hasTaskPermission) {
+        print('DEBUG: Utilisateur a une permission directe sur cette tâche');
+        setState(() {
+          _hasTaskAccess = true;
+        });
+        await _loadAllTaskData();
+        return;
+      }
+      
+      // Vérifier si l'utilisateur a un rôle associé à ce projet spécifique
+      final hasProjectRole = userRolesDetails.any((role) => 
+        role['project_id'] == _task.projectId
+      );
+      
+      if (hasProjectRole) {
+        print('DEBUG: Utilisateur a un rôle associé au projet de cette tâche');
+        setState(() {
+          _hasTaskAccess = true;
+        });
+        await _loadAllTaskData();
+        return;
+      }
+      
+      // Vérifier si l'utilisateur est assigné à cette tâche
+      final currentUser = _authService.currentUser;
+      if (currentUser != null && _task.assignedTo == currentUser.id) {
+        print('DEBUG: Utilisateur est assigné à cette tâche');
+        setState(() {
+          _hasTaskAccess = true;
+        });
+        await _loadAllTaskData();
+        return;
+      }
+      
+      // Aucun accès trouvé
+      setState(() {
+        _hasTaskAccess = false;
+        _isLoading = false;
+      });
+      
+    } catch (e) {
+      print('ERROR: Erreur lors de la vérification de l\'accès à la tâche: $e');
+      setState(() {
+        _errorMessage = 'Erreur lors de la vérification de l\'accès à la tâche: $e';
+        _isLoading = false;
+        _hasTaskAccess = false;
+      });
+    }
+  }
+
+  /// Charge toutes les données liées à la tâche
+  Future<void> _loadAllTaskData() async {
+    try {
+      // Charger toutes les données en parallèle
+      await Future.wait([
+        _loadAssignedTeams(),
+        _loadUserDisplayNames(),
+        _loadTaskHistory(),
+        _loadAttachments(),
+        _loadTaskBudget(),
+        _loadComments()
+      ]);
+      
+      // Une fois toutes les données chargées, mettre à jour l'état
+      setState(() {
+        _isLoading = false;
+      });
+      
+      print('DEBUG: Toutes les données de la tâche chargées avec succès');
+    } catch (e) {
+      print('ERROR: Erreur lors du chargement des données de la tâche: $e');
+      setState(() {
+        _errorMessage = 'Erreur lors du chargement des données: $e';
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _loadAssignedTeams() async {
@@ -203,12 +301,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       setState(() {
         _task = updatedTask;
       });
-      _loadAssignedTeams();
-      _loadUserDisplayNames();
-      _loadTaskHistory();
-      _loadAttachments();
-      _loadTaskBudget();
-      _loadComments();
+      await _loadAllTaskData();
     } catch (e) {
       setState(() {
         _errorMessage = 'Erreur lors du chargement des détails de la tâche: $e';
@@ -230,7 +323,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       });
       
       // Rafraîchir l'historique
-      _loadTaskHistory();
+      await _loadTaskHistory();
       
       if (widget.onTaskUpdated != null) {
         widget.onTaskUpdated!(_task);
@@ -245,108 +338,108 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RbacGatedScreen(
-      permissionName: 'read_task',
-      child: Scaffold(
-        appBar: CustomAppBar(
-          title: _task.title,
-          showLogo: false,
-          actions: [
-            PermissionGated(
-              permissionName: 'update_task',
-              projectId: _task.projectId,
-              child: PopupMenuButton<String>(
-                onSelected: (value) async {
-                  if (value == 'edit') {
-                    final result = await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TaskFormScreen(
-                          projectId: _task.projectId,
-                          task: _task,
-                        ),
-                      ),
-                    );
-                    if (result == true) {
-                      _refreshTaskDetails();
-                    }
-                  } else if (value == 'delete') {
-                    _showDeleteConfirmationDialog();
-                  }
-                },
-                itemBuilder: (context) {
-                  final items = <PopupMenuEntry<String>>[];
-                  
-                  // Toujours ajouter l'option d'édition si l'utilisateur a la permission update_task
-                  items.add(
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          Icon(Icons.edit),
-                          SizedBox(width: 8),
-                          Text('Modifier'),
-                        ],
-                      ),
-                    ),
-                  );
-                  
-                  // Vérifier si l'utilisateur a la permission delete_task avant d'ajouter l'option supprimer
-                  _roleService.hasPermission('delete_task', projectId: _task.projectId).then((hasPermission) {
-                    if (hasPermission) {
-                      items.add(
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(Icons.delete, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text('Supprimer', style: TextStyle(color: Colors.red)),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                  });
-                  
-                  return items;
-                },
-              ),
-            ),
-          ],
-        ),
-        body: _buildBody(),
-      ),
-    );
-  }
-
-  Widget _buildBody() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
+      return Scaffold(
+        appBar: CustomAppBar(
+          title: 'Détails de la tâche',
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
       );
     }
 
     if (_errorMessage != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              _errorMessage!,
-              style: const TextStyle(color: Colors.red),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _refreshTaskDetails,
-              child: const Text('Réessayer'),
-            ),
-          ],
+      return Scaffold(
+        appBar: CustomAppBar(
+          title: 'Erreur',
         ),
+        body: _buildErrorWidget(),
       );
     }
 
+    if (!_hasTaskAccess) {
+      return Scaffold(
+        appBar: CustomAppBar(
+          title: 'Accès refusé',
+        ),
+        body: _buildAccessDeniedWidget(),
+      );
+    }
+
+    return Scaffold(
+      appBar: CustomAppBar(
+        title: _task.title,
+        showLogo: false,
+        actions: [
+          PermissionGated(
+            permissionName: 'update_task',
+            projectId: _task.projectId,
+            child: PopupMenuButton<String>(
+              onSelected: (value) async {
+                if (value == 'edit') {
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => TaskFormScreen(
+                        projectId: _task.projectId,
+                        task: _task,
+                      ),
+                    ),
+                  );
+                  if (result == true) {
+                    await _refreshTaskDetails();
+                  }
+                } else if (value == 'delete') {
+                  _showDeleteConfirmationDialog();
+                }
+              },
+              itemBuilder: (context) {
+                final items = <PopupMenuEntry<String>>[];
+                
+                // Toujours ajouter l'option d'édition si l'utilisateur a la permission update_task
+                items.add(
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit),
+                        SizedBox(width: 8),
+                        Text('Modifier'),
+                      ],
+                    ),
+                  ),
+                );
+                
+                // Vérifier si l'utilisateur a la permission delete_task avant d'ajouter l'option supprimer
+                _roleService.hasPermission('delete_task', projectId: _task.projectId).then((hasPermission) {
+                  if (hasPermission) {
+                    items.add(
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Supprimer', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                });
+                
+                return items;
+              },
+            ),
+          ),
+        ],
+      ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
     final TaskStatus status = TaskStatus.values.firstWhere(
       (s) => s.name == _task.status,
       orElse: () => TaskStatus.todo,
@@ -744,6 +837,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         'Budget',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
+                      // Bouton commenté car non protégé par vérification RBAC
+                      // Utiliser le bouton "Nouvelle transaction" du widget BudgetSummaryWidget à la place
+                      /*
                       IconButton(
                         icon: const Icon(Icons.add, color: Colors.blue),
                         tooltip: 'Ajouter une transaction',
@@ -760,11 +856,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           );
                           
                           if (result != null) {
-                            _loadTaskBudget();
-                            _refreshTaskDetails();
+                            await _loadTaskBudget();
+                            await _refreshTaskDetails();
                           }
                         },
                       ),
+                      */
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -778,7 +875,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                           projectId: _task.projectId,
                           phaseId: _task.phaseId,
                           taskId: _task.id,
-                          onTransactionAdded: (transaction) {
+                          onTransactionAdded: (transaction) async {
                             setState(() {
                               _taskTransactions.add(transaction);
                               // Mettre à jour le budget consommé si c'est une dépense
@@ -788,24 +885,24 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                                 );
                               }
                             });
-                            _loadTaskBudget();
+                            await _loadTaskBudget();
                           },
-                          onTransactionUpdated: (transaction) {
+                          onTransactionUpdated: (transaction) async {
                             setState(() {
                               final index = _taskTransactions.indexWhere((t) => t.id == transaction.id);
                               if (index != -1) {
                                 _taskTransactions[index] = transaction;
                               }
                             });
-                            _loadTaskBudget();
-                            _refreshTaskDetails();
+                            await _loadTaskBudget();
+                            await _refreshTaskDetails();
                           },
-                          onTransactionDeleted: (transaction) {
+                          onTransactionDeleted: (transaction) async {
                             setState(() {
                               _taskTransactions.removeWhere((t) => t.id == transaction.id);
                             });
-                            _loadTaskBudget();
-                            _refreshTaskDetails();
+                            await _loadTaskBudget();
+                            await _refreshTaskDetails();
                           },
                         ),
                 ],
@@ -1973,5 +2070,75 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     );
     
     return dialog;
+  }
+
+  /// Widget d'erreur en cas d'échec de vérification des permissions
+  Widget _buildAccessDeniedWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.lock,
+            size: 64,
+            color: Colors.grey,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Accès refusé',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              'Vous n\'avez pas l\'autorisation d\'accéder à cette tâche.\nContactez un administrateur si vous pensez qu\'il s\'agit d\'une erreur.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Retour'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  /// Widget d'erreur générique
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.error_outline,
+            color: Colors.red,
+            size: 48,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Erreur',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              _errorMessage ?? 'Une erreur inconnue est survenue',
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _checkTaskAccess,
+            child: const Text('Réessayer'),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -18,22 +18,115 @@ class RoleService {
   }) async {
     try {
       final userId = _client.auth.currentUser?.id;
-      if (userId == null) return false;
+      if (userId == null) {
+        print('=== RBAC DEBUG === Pas d\'utilisateur connecté, permission refusée');
+        return false;
+      }
       
-      print('DEBUG: Vérification permission: $permissionName pour user: $userId');
+      print('\n=== RBAC DEBUG === [DÉBUT] Vérification permission: $permissionName');
+      print('=== RBAC DEBUG === Utilisateur: $userId');
+      if (teamId != null) {
+        print('=== RBAC DEBUG === Contexte d\'équipe: $teamId');
+      }
+      if (projectId != null) {
+        print('=== RBAC DEBUG === Contexte de projet: $projectId');
+      }
       
-      // Récupérer directement les rôles de l'utilisateur pour debug
-      final userRolesResponse = await _client.from('user_roles').select('roles (name)').eq('user_id', userId);
-      final userRoles = (userRolesResponse as List).map((role) => role['roles']['name'] as String).toList();
-      print('DEBUG: Rôles de l\'utilisateur: $userRoles');
+      // Récupérer détails de la permission
+      print('=== RBAC DEBUG === Récupération des détails de la permission: $permissionName');
+      final permissionDetails = await _client
+          .from('permissions')
+          .select('id, name, description, resource_type, action')
+          .eq('name', permissionName)
+          .maybeSingle();
+      
+      if (permissionDetails != null) {
+        print('=== RBAC DEBUG === Permission trouvée: ${permissionDetails['description']} (type: ${permissionDetails['resource_type']}, action: ${permissionDetails['action']})');
+      } else {
+        print('=== RBAC DEBUG === ATTENTION: Permission "$permissionName" non trouvée dans la base de données!');
+      }
+      
+      // Récupérer directement les rôles et permissions pour DEBUG
+      final userRolesWithPermissionsResponse = await _client.from('user_roles')
+          .select('''
+            role_id,
+            roles (
+              id, 
+              name, 
+              description
+            ),
+            team_id,
+            project_id
+          ''')
+          .eq('user_id', userId);
+      
+      print('=== RBAC DEBUG === Rôles attribués à l\'utilisateur:');
+      List<Map<String, dynamic>> userRoles = [];
+      
+      for (var roleData in userRolesWithPermissionsResponse) {
+        final roleName = roleData['roles']['name'];
+        final roleId = roleData['roles']['id'];
+        final roleDesc = roleData['roles']['description'];
+        final roleTeamId = roleData['team_id'];
+        final roleProjectId = roleData['project_id'];
+        
+        userRoles.add({
+          'id': roleId,
+          'name': roleName,
+          'description': roleDesc,
+          'team_id': roleTeamId,
+          'project_id': roleProjectId
+        });
+        
+        print('=== RBAC DEBUG ===   - Rôle: $roleName ($roleDesc)');
+        if (roleTeamId != null) print('=== RBAC DEBUG ===     → Équipe: $roleTeamId');
+        if (roleProjectId != null) print('=== RBAC DEBUG ===     → Projet: $roleProjectId');
+      }
       
       // Si l'utilisateur est un admin système, accorder automatiquement toutes les permissions
-      if (userRoles.contains('system_admin')) {
-        print('DEBUG: L\'utilisateur est system_admin, toutes les permissions sont accordées');
+      final isSystemAdmin = userRoles.any((role) => role['name'] == 'system_admin');
+      if (isSystemAdmin) {
+        print('=== RBAC DEBUG === L\'utilisateur est system_admin, permission $permissionName accordée automatiquement');
         return true;
       }
 
+      // Pour le rôle project_manager, vérifier si un des rôles correspond exactement au projet demandé
+      if (projectId != null) {
+        final projectManagerRole = userRoles.where(
+          (role) => role['name'] == 'project_manager' && role['project_id'] == projectId
+        ).toList();
+        
+        if (projectManagerRole.isNotEmpty) {
+          print('=== RBAC DEBUG === Utilisateur a le rôle project_manager pour ce projet spécifique');
+          
+          // Récupérer toutes les permissions pour le rôle project_manager directement avec la bonne structure
+          final projectManagerRoleId = projectManagerRole.first['id'];
+          if (projectManagerRoleId != null) {
+            print('=== RBAC DEBUG === ID du rôle project_manager: $projectManagerRoleId');
+            
+            final rolePermissions = await _client
+                .from('role_permissions')
+                .select('permissions (name)')
+                .eq('role_id', projectManagerRoleId);
+            
+            final permissions = rolePermissions.map((p) => p['permissions']['name'] as String).toList();
+            print('=== RBAC DEBUG === Permissions du project_manager: $permissions');
+            
+            if (permissions.contains(permissionName)) {
+              print('=== RBAC DEBUG === [RÉSULTAT FINAL] Permission $permissionName trouvée pour le project_manager, ACCORDÉE');
+              return true;
+            }
+          }
+        }
+      }
+
       // Pour les autres rôles, vérifier dans la base de données      
+      print('=== RBAC DEBUG === Appel de la RPC user_has_permission avec:');
+      print('=== RBAC DEBUG ===   - user_id: $userId');
+      print('=== RBAC DEBUG ===   - permission_name: $permissionName');
+      print('=== RBAC DEBUG ===   - team_id: $teamId');
+      print('=== RBAC DEBUG ===   - project_id: $projectId');
+      
       final response = await _client.rpc('user_has_permission', params: {
         'p_user_id': userId,
         'p_permission_name': permissionName,
@@ -41,11 +134,56 @@ class RoleService {
         'p_project_id': projectId,
       });
       
-      print('DEBUG: Réponse de la RPC user_has_permission: $response');
+      print('=== RBAC DEBUG === Réponse de la RPC: $response');
+      
+      // Si la permission n'est pas accordée, vérifier les contextes plus larges
+      if (response != true) {
+        if (projectId != null) {
+          print('=== RBAC DEBUG === Permission refusée pour le projet spécifique, vérification du contexte global...');
+          
+          // Vérifier si l'utilisateur a cette permission dans un contexte global (sans projet)
+          final hasGlobalPermission = await _client.rpc('user_has_permission', params: {
+            'p_user_id': userId,
+            'p_permission_name': permissionName,
+            'p_team_id': teamId,
+            'p_project_id': null,
+          });
+          
+          print('=== RBAC DEBUG === Permission dans le contexte global: $hasGlobalPermission');
+          
+          if (hasGlobalPermission == true) {
+            print('=== RBAC DEBUG === Permission accordée via un contexte global');
+            return true;
+          }
+        }
+        
+        if (teamId != null) {
+          print('=== RBAC DEBUG === Permission refusée dans le contexte d\'équipe spécifique, vérification sans équipe...');
+          
+          // Vérifier si l'utilisateur a cette permission sans contexte d'équipe
+          final hasNonTeamPermission = await _client.rpc('user_has_permission', params: {
+            'p_user_id': userId,
+            'p_permission_name': permissionName,
+            'p_team_id': null,
+            'p_project_id': projectId,
+          });
+          
+          print('=== RBAC DEBUG === Permission sans contexte d\'équipe: $hasNonTeamPermission');
+          
+          if (hasNonTeamPermission == true) {
+            print('=== RBAC DEBUG === Permission accordée sans contexte d\'équipe');
+            return true;
+          }
+        }
+      }
 
+      print('=== RBAC DEBUG === [RÉSULTAT FINAL] Permission ' + 
+            (response == true ? 'ACCORDÉE' : 'REFUSÉE') + 
+            ' pour ' + permissionName);
       return response ?? false;
     } catch (e) {
-      print('Erreur lors de la vérification de la permission: $e');
+      print('=== RBAC DEBUG === ERREUR lors de la vérification de la permission: $e');
+      print('=== RBAC DEBUG === Stack trace: ${e is Error ? e.stackTrace : "Non disponible"}');
       return false;
     }
   }
@@ -313,6 +451,36 @@ class RoleService {
       return response;
     } catch (e) {
       print('Erreur lors de la récupération des utilisateurs: $e');
+      return [];
+    }
+  }
+
+  /// Récupère les rôles d'un utilisateur avec les détails associés
+  Future<List<Map<String, dynamic>>> getUserRolesWithDetails(String userId) async {
+    try {
+      final response = await _client
+          .from('user_roles')
+          .select('role_id, roles (name, description), team_id, project_id')
+          .eq('user_id', userId);
+      
+      return response as List<Map<String, dynamic>>;
+    } catch (e) {
+      print('Erreur lors de la récupération des rôles de l\'utilisateur: $e');
+      return [];
+    }
+  }
+  
+  /// Récupère les permissions associées à un rôle
+  Future<List<Map<String, dynamic>>> getRolePermissions(String roleId) async {
+    try {
+      final response = await _client
+          .from('role_permissions')
+          .select('permissions (name, description)')
+          .eq('role_id', roleId);
+      
+      return response as List<Map<String, dynamic>>;
+    } catch (e) {
+      print('Erreur lors de la récupération des permissions du rôle: $e');
       return [];
     }
   }

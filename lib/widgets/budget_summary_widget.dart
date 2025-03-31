@@ -89,6 +89,8 @@ class BudgetSummaryWidget extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    // Bouton commenté car remplacé par le bouton "Nouvelle transaction" avec vérification RBAC
+                    /*
                     if (showAddButton && onAddPressed != null)
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline, color: Colors.blue),
@@ -97,6 +99,7 @@ class BudgetSummaryWidget extends StatelessWidget {
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
+                    */
                   ],
                 ),
                 const SizedBox(height: 16),
