@@ -22,6 +22,113 @@ import '../../widgets/rbac_gated_screen.dart';
 import '../projects/project_detail_screen.dart';
 import '../budget/transaction_form_screen.dart';
 
+// Wrapper pour l'écran Finance avec vérification RBAC
+class ProjectFinanceDashboardScreenWrapper extends StatefulWidget {
+  const ProjectFinanceDashboardScreenWrapper({Key? key}) : super(key: key);
+
+  @override
+  State<ProjectFinanceDashboardScreenWrapper> createState() => _ProjectFinanceDashboardScreenWrapperState();
+}
+
+class _ProjectFinanceDashboardScreenWrapperState extends State<ProjectFinanceDashboardScreenWrapper> {
+  final ProjectService _projectService = ProjectService();
+  final RoleService _roleService = RoleService();
+  bool _isLoading = true;
+  List<Project> _accessibleProjects = [];
+  Project? _firstProject;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissions();
+  }
+
+  Future<void> _checkPermissions() async {
+    try {
+      print('=== RBAC DEBUG === [FinanceScreenWrapper] Vérification des permissions...');
+      // Charger tous les projets auxquels l'utilisateur a accès
+      final accessibleProjects = await _projectService.getAccessibleProjects();
+      
+      if (accessibleProjects.isEmpty) {
+        // L'utilisateur n'a pas accès à aucun projet
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _accessibleProjects = [];
+          });
+        }
+      } else {
+        // L'utilisateur a accès à au moins un projet
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _accessibleProjects = accessibleProjects;
+            _firstProject = accessibleProjects.first;
+          });
+        }
+      }
+    } catch (e) {
+      print('=== RBAC DEBUG === [FinanceScreenWrapper] Erreur: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_accessibleProjects.isEmpty) {
+      // Aucun projet accessible, afficher l'écran d'accès refusé
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Accès refusé'),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.lock,
+                size: 80,
+                color: Colors.red,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Vous n\'avez pas l\'autorisation d\'accéder aux finances',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+                },
+                child: const Text('Retour au tableau de bord'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Au moins un projet accessible, afficher l'écran des finances
+    return ProjectFinanceDashboardScreen(
+      projectId: _accessibleProjects.length == 1 ? _accessibleProjects.first.id : null,
+      accessibleProjects: _accessibleProjects,
+    );
+  }
+}
+
 // Classe de données pour les graphiques circulaires
 class ChartData {
   final String category;
@@ -37,7 +144,10 @@ class ChartData {
 }
 
 class ProjectFinanceDashboardScreen extends StatefulWidget {
-  const ProjectFinanceDashboardScreen({Key? key}) : super(key: key);
+  final String? projectId;
+  final List<Project> accessibleProjects;
+
+  const ProjectFinanceDashboardScreen({Key? key, this.projectId, required this.accessibleProjects}) : super(key: key);
 
   @override
   State<ProjectFinanceDashboardScreen> createState() => _ProjectFinanceDashboardScreenState();
@@ -62,7 +172,7 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   
   // États pour les équipes et visualisation des finances d'équipe
   bool _isAdmin = false;
-  List<Team> _adminTeams = [];
+  List<dynamic> _adminTeams = []; // Changer le type de List<Team> à List<dynamic>
   
   // Sélection par projet
   String? _selectedProjectId;
@@ -102,6 +212,16 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    
+    // Initialiser le projet sélectionné depuis le paramètre si fourni
+    if (widget.projectId != null) {
+      _selectedProjectId = widget.projectId;
+      _showAllProjects = false;
+    }
+    
+    // Définir la liste des projets accessible
+    _projects = widget.accessibleProjects;
+    
     _loadData();
     
     // Tracer les informations sur l'utilisateur au démarrage de l'écran
@@ -237,28 +357,38 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   // Chargement des données à partir du serveur
   Future<void> _loadDataFromServer() async {
     try {
+      print('=== RBAC DEBUG === [FinanceScreen] Chargement des données avec filtrage RBAC');
       final userId = _projectFinanceService.supabaseClient.auth.currentUser!.id;
       
-      // Vérifier si l'utilisateur est administrateur d'une équipe
-      final adminTeams = await _teamService.getUserAdminTeams(userId);
-      final isAdmin = adminTeams.isNotEmpty;
+      // Vérifier si l'utilisateur a accès à plusieurs projets
+      final hasMultipleProjects = widget.accessibleProjects.length > 1;
+      final isAdmin = await _projectFinanceService.isUserAdmin(); // Utiliser ProjectFinanceService à la place de TeamService
       
-      // Charger les transactions selon le contexte (projet spécifique ou tous les projets)
+      // Utiliser ce statut pour contrôler l'affichage du sélecteur de projet
+      final showProjectSelector = hasMultipleProjects || isAdmin;
+      
+      // Récupérer les équipes administrées si nécessaire
+      final adminTeams = isAdmin ? await _teamService.getUserAdminTeams(userId) : [];
+      
+      // Charger les transactions selon le contexte (projet spécifique ou tous les projets accessibles)
       List<ProjectTransaction> projectTransactions;
       
       if (_selectedProjectId != null) {
         // Charger les transactions du projet sélectionné
+        print('=== RBAC DEBUG === [FinanceScreen] Chargement des transactions du projet $_selectedProjectId');
         projectTransactions = await _projectFinanceService.getProjectProjectTransactions(_selectedProjectId!);
       } else {
-        // Charger toutes les transactions auxquelles l'utilisateur a accès
-        projectTransactions = await _projectFinanceService.getAllProjectTransactions();
+        // Charger toutes les transactions auxquelles l'utilisateur a accès via RBAC
+        print('=== RBAC DEBUG === [FinanceScreen] Chargement de toutes les transactions accessibles');
+        projectTransactions = await _projectFinanceService.getAccessibleTransactions();
       }
       
       // Extraire les transactions récentes (les 20 dernières)
       final recentTransactions = projectTransactions.take(20).toList();
       
-      // Charger les projets
-      final projects = await _projectService.getAllProjects();
+      // Les projets sont déjà filtrés via le wrapper RBAC
+      final projects = widget.accessibleProjects;
+      print('=== RBAC DEBUG === [FinanceScreen] ${projects.length} projets accessibles');
       
       // Trouver les projets avec solde négatif (alerte)
       final projectsWithAlert = projects.where((project) {
@@ -325,9 +455,9 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
       
       setState(() {
         _adminTeams = adminTeams;
-        _isAdmin = isAdmin;
+        _isAdmin = showProjectSelector; // Utiliser cette valeur pour contrôler l'affichage du sélecteur
         _projectTransactions = projectTransactions;
-        _projects = projects;
+        // Les projets sont déjà définis depuis le constructeur
         _recentTransactions = recentTransactions;
         _projectsWithBalanceAlert = projectsWithAlert;
         _totalRevenues = totalRevenues;
@@ -353,138 +483,104 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   
   @override
   Widget build(BuildContext context) {
-    return RbacGatedScreen(
-      permissionName: 'read_transaction',
-      onAccessDenied: () {
-        print('DEBUG: ProjectFinanceDashboardScreen - onAccessDenied appelé');
-        // Afficher seulement un message dans la console sans redirection automatique
-        print('DEBUG: ProjectFinanceDashboardScreen - Accès refusé, affichage de l\'écran d\'accès refusé');
-      },
-      accessDeniedWidget: Scaffold(
-        appBar: AppBar(
-          title: const Text('Accès refusé'),
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.lock,
-                size: 80,
-                color: Colors.red,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Vous n\'avez pas l\'autorisation d\'accéder aux finances',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18),
-              ),
-              const SizedBox(height: 8),
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            //const Text('Finances'),
+            if (_selectedProjectId != null && _selectedProjectName.isNotEmpty)
               Text(
-                'Veuillez contacter votre administrateur pour obtenir l\'accès',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
+                '$_selectedProjectName',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.normal,
                 ),
               ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  // Navigation à la page d'accueil
-                  Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
-                },
-                child: const Text('Retour au tableau de bord'),
+          ],
+        ),
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(_isAdmin && _selectedProjectId != null ? 48 : 48),
+          child: Column(
+            children: [
+              // TabBar pour la navigation
+              TabBar(
+                controller: _tabController,
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white70,
+                indicatorColor: Colors.white,
+                indicatorWeight: 3.0,
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.0,
+                ),
+                unselectedLabelStyle: const TextStyle(
+                  fontWeight: FontWeight.normal,
+                  fontSize: 14.0,
+                ),
+                tabs: const [
+                  Tab(text: 'Vue d\'ensemble'),
+                  Tab(text: 'Finances des projets'),
+                  Tab(text: 'Alertes'),
+                  Tab(text: 'Transactions'),
+                ],
               ),
             ],
           ),
         ),
+        actions: [
+          // Affichage du sélecteur de projet uniquement pour les administrateurs qui peuvent gérer les budgets
+          PermissionGated(
+            permissionName: 'manage_budget',
+            child: ProjectSelectorButton(
+              onPressed: _showProjectSelector,
+              showAllProjects: _showAllProjects,
+              projectName: _selectedProjectName,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadData,
+            tooltip: 'Actualiser',
+          ),
+        ],
       ),
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Tableau de bord financier'),
-          bottom: PreferredSize(
-            preferredSize: Size.fromHeight(_isAdmin && _selectedProjectId != null ? 48 : 48),
-            child: Column(
+      floatingActionButton: PermissionGated(
+        permissionName: 'create_transaction',
+        projectId: _selectedProjectId,
+        child: FloatingActionButton(
+          onPressed: () async {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => TransactionFormScreen(
+                  projectId: _selectedProjectId,
+                ),
+              ),
+            );
+            
+            if (result != null) {
+              _loadData();
+            }
+          },
+          child: const Icon(Icons.add),
+          tooltip: 'Ajouter une transaction',
+        ),
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+              controller: _tabController,
               children: [
-                // TabBar pour la navigation
-                TabBar(
-                  controller: _tabController,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.white70,
-                  indicatorColor: Colors.white,
-                  indicatorWeight: 3.0,
-                  labelStyle: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14.0,
-                  ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontWeight: FontWeight.normal,
-                    fontSize: 14.0,
-                  ),
-                  tabs: const [
-                    Tab(text: 'Vue d\'ensemble'),
-                    Tab(text: 'Finances des projets'),
-                    Tab(text: 'Alertes'),
-                    Tab(text: 'Transactions'),
-                  ],
+                _buildOverviewTab(),
+                _buildProjectFinancesTab(),
+                _buildAlertsTab(),
+                PermissionGated(
+                  permissionName: 'read_transaction',
+                  projectId: _selectedProjectId,
+                  child: _buildTransactionsTab(),
                 ),
               ],
             ),
-          ),
-          actions: [
-            // Affichage du sélecteur de projet uniquement pour les administrateurs qui peuvent gérer les budgets
-            PermissionGated(
-              permissionName: 'manage_budget',
-              child: ProjectSelectorButton(
-                onPressed: _showProjectSelector,
-                showAllProjects: _showAllProjects,
-                projectName: _selectedProjectName,
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadData,
-              tooltip: 'Actualiser',
-            ),
-          ],
-        ),
-        floatingActionButton: PermissionGated(
-          permissionName: 'create_transaction',
-          projectId: _selectedProjectId,
-          child: FloatingActionButton(
-            onPressed: () async {
-              final result = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => TransactionFormScreen(
-                    projectId: _selectedProjectId,
-                  ),
-                ),
-              );
-              
-              if (result != null) {
-                _loadData();
-              }
-            },
-            child: const Icon(Icons.add),
-            tooltip: 'Ajouter une transaction',
-          ),
-        ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildOverviewTab(),
-                  _buildProjectFinancesTab(),
-                  _buildAlertsTab(),
-                  PermissionGated(
-                    permissionName: 'read_all_transactions',
-                    child: _buildTransactionsTab(),
-                  ),
-                ],
-              ),
-      ),
     );
   }
   
@@ -565,7 +661,8 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   // Onglet Vue d'ensemble
   Widget _buildOverviewTab() {
     return PermissionGated(
-      permissionName: 'read_all_transactions',
+      permissionName: 'read_transaction',
+      projectId: _selectedProjectId,
       child: RefreshIndicator(
         onRefresh: () async {
           await _loadData();
@@ -611,7 +708,8 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
               
               // Graphique de répartition des dépenses
               PermissionGated(
-                permissionName: 'read_all_transactions',
+                permissionName: 'read_transaction',
+                projectId: _selectedProjectId,
                 child: Card(
                   elevation: 4,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -639,7 +737,8 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
               
               // Graphique de répartition des entrées
               PermissionGated(
-                permissionName: 'read_all_transactions',
+                permissionName: 'read_transaction',
+                projectId: _selectedProjectId,
                 child: Card(
                   elevation: 4,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -667,7 +766,8 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
               
               // Transactions récentes
               PermissionGated(
-                permissionName: 'read_all_transactions',
+                permissionName: 'read_transaction',
+                projectId: _selectedProjectId,
                 child: Card(
                   elevation: 4,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -687,7 +787,8 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                               ),
                             ),
                             PermissionGated(
-                              permissionName: 'read_all_transactions',
+                              permissionName: 'read_transaction',
+                              projectId: _selectedProjectId,
                               child: TextButton(
                                 onPressed: () {
                                   // Aller à l'onglet Transactions
@@ -1789,11 +1890,11 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
     try {
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) {
-        print('ERREUR: ProjectFinanceDashboardScreen - Aucun utilisateur connecté');
+        print('ERREUR: [FinanceScreen] - Aucun utilisateur connecté');
         return;
       }
       
-      print('\n===== INFORMATIONS D\'ACCÈS UTILISATEUR (ProjectFinanceDashboardScreen) =====');
+      print('\n===== INFORMATIONS D\'ACCÈS UTILISATEUR (FinanceScreen) =====');
       print('ID utilisateur: ${user.id}');
       print('Email: ${user.email}');
       
@@ -1846,8 +1947,8 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
       }
       
       // Vérifier spécifiquement la permission pour l'écran des finances
-      final hasFinanceAccess = await _roleService.hasPermission('read_all_transactions');
-      print('\nPermission "read_all_transactions" (accès finances): ${hasFinanceAccess ? 'ACCORDÉE' : 'REFUSÉE'}');
+      final hasFinanceAccess = await _roleService.hasPermission('read_transaction');
+      print('\nPermission "read_transaction" (accès finances): ${hasFinanceAccess ? 'ACCORDÉE' : 'REFUSÉE'}');
       
       print('============================================================\n');
     } catch (e) {

@@ -569,6 +569,51 @@ class ProjectService {
     }
   }
 
+  // Récupérer les tâches pour une liste de projets accessibles (respecte RBAC)
+  Future<List<Task>> getTasksForProjects(List<String> projectIds) async {
+    try {
+      if (projectIds.isEmpty) {
+        print('Aucun projet accessible, retourne une liste vide');
+        return [];
+      }
+      
+      print('Récupération des tâches pour les projets: ${projectIds.join(", ")}');
+      
+      // Construire la requête manuellement car la méthode in_ n'est pas disponible
+      // dans cette version de postgrest
+      final query = _client.from(_tasksTable).select();
+      
+      // Si nous avons un seul projet, utiliser eq() directement
+      if (projectIds.length == 1) {
+        final response = await query
+            .eq('project_id', projectIds[0])
+            .order('priority', ascending: false)
+            .order('created_at', ascending: false);
+        
+        print('Nombre de tâches récupérées (projet unique): ${response.length}');
+        return response.map((json) => Task.fromJson(json)).toList();
+      } 
+      // Sinon, utiliser or() pour créer une condition "project_id in (...)"
+      else {
+        // Récupérer toutes les tâches puis filtrer manuellement
+        final allTasksResponse = await query
+            .order('priority', ascending: false)
+            .order('created_at', ascending: false);
+        
+        // Filtrer manuellement par project_id
+        final filteredTasks = allTasksResponse
+            .where((taskJson) => projectIds.contains(taskJson['project_id']))
+            .toList();
+        
+        print('Nombre de tâches récupérées (filtrage manuel): ${filteredTasks.length}');
+        return filteredTasks.map((json) => Task.fromJson(json)).toList();
+      }
+    } catch (e) {
+      print('Erreur lors de la récupération des tâches pour les projets: $e');
+      rethrow;
+    }
+  }
+
   // Récupérer les tâches d'une phase
   Future<List<Task>> getTasksByPhase(String phaseId) async {
     try {
@@ -774,6 +819,84 @@ class ProjectService {
     } catch (e) {
       // Ignorer les erreurs en arrière-plan, juste logger
       print('Erreur lors du rafraîchissement des projets en arrière-plan: $e');
+    }
+  }
+
+  // Récupérer les projets accessibles à l'utilisateur selon ses permissions RBAC
+  Future<List<Project>> getAccessibleProjects() async {
+    try {
+      final user = _authService.currentUser;
+      if (user == null) {
+        print('RBAC: Aucun utilisateur connecté pour récupérer les projets accessibles');
+        return [];
+      }
+      
+      // Vérifier si l'utilisateur a la permission globale read_all_projects
+      final hasAllProjectsAccess = await _roleService.hasPermission('read_all_projects');
+      
+      if (hasAllProjectsAccess) {
+        print('RBAC: Utilisateur avec permission read_all_projects, retourne tous les projets');
+        return await getAllProjects();
+      }
+      
+      print('RBAC: Récupération des projets accessibles pour l\'utilisateur: ${user.id}');
+      
+      // Récupérer les projets accessibles via les rôles de l'utilisateur
+      final accessibleProjectsResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('project_id')
+          .eq('user_id', user.id)
+          .not('project_id', 'is', null);
+      
+      final accessibleProjectIds = accessibleProjectsResponse
+          .map<String>((json) => json['project_id'] as String)
+          .toList();
+      
+      if (accessibleProjectIds.isEmpty) {
+        print('RBAC: Aucun projet accessible pour l\'utilisateur');
+        return [];
+      }
+      
+      print('RBAC: Projets accessibles IDs: ${accessibleProjectIds.join(", ")}');
+      
+      // Récupérer les détails des projets accessibles
+      List<Project> projects = [];
+      
+      // Traiter les projets par lots pour éviter une requête trop longue
+      const batchSize = 10;
+      for (int i = 0; i < accessibleProjectIds.length; i += batchSize) {
+        final endIdx = (i + batchSize < accessibleProjectIds.length) 
+            ? i + batchSize 
+            : accessibleProjectIds.length;
+        final currentBatch = accessibleProjectIds.sublist(i, endIdx);
+        
+        // Construire une requête OR pour chaque ID de projet dans le lot
+        final query = _client.from(_projectsTable).select();
+        
+        // Si nous avons un seul ID dans ce lot, utilisez eq directement
+        if (currentBatch.length == 1) {
+          final batchResponse = await query
+              .eq('id', currentBatch[0])
+              .order('created_at', ascending: false);
+          
+          projects.addAll(batchResponse.map((json) => Project.fromJson(json)).toList());
+        } else {
+          // Sinon, récupérer tous les projets et filtrer manuellement
+          final allProjectsResponse = await query.order('created_at', ascending: false);
+          
+          final filteredProjects = allProjectsResponse
+              .where((projectJson) => currentBatch.contains(projectJson['id']))
+              .toList();
+          
+          projects.addAll(filteredProjects.map((json) => Project.fromJson(json)).toList());
+        }
+      }
+      
+      print('RBAC: ${projects.length} projets accessibles récupérés');
+      return projects;
+    } catch (e) {
+      print('RBAC: Erreur lors de la récupération des projets accessibles: $e');
+      rethrow;
     }
   }
 

@@ -364,6 +364,63 @@ class ProjectFinanceService {
     }
   }
 
+  // Récupérer toutes les transactions accessibles à l'utilisateur selon ses permissions RBAC
+  Future<List<ProjectTransaction>> getAccessibleTransactions() async {
+    try {
+      print('RBAC: Récupération des transactions accessibles à l\'utilisateur');
+      final userId = _supabase.auth.currentUser!.id;
+      
+      // Récupérer les projets accessibles via RBAC
+      final accessibleProjects = await _projectService.getAccessibleProjects();
+      if (accessibleProjects.isEmpty) {
+        print('RBAC: Aucun projet accessible pour l\'utilisateur');
+        return [];
+      }
+      
+      print('RBAC: ${accessibleProjects.length} projets accessibles trouvés');
+      final List<String> projectIds = accessibleProjects.map((p) => p.id).toList();
+      
+      // Récupérer les transactions pour ces projets
+      final response = await _supabase
+          .from('budget_transactions')
+          .select()
+          .inFilter('project_id', projectIds)
+          .order('transaction_date', ascending: false);
+      
+      final List<ProjectTransaction> transactions = [];
+      
+      // Récupérer les noms des projets pour chaque transaction
+      for (final json in response) {
+        if (json['project_id'] != null) {
+          // Trouver le projet dans la liste des projets accessibles
+          final matchingProject = accessibleProjects.firstWhere(
+            (p) => p.id == json['project_id'],
+            orElse: () => Project(
+              id: json['project_id'],
+              name: 'Projet inconnu',
+              description: '',
+              status: 'active',
+              createdBy: '',
+              createdAt: DateTime.now(),
+            ),
+          );
+          
+          json['project_name'] = matchingProject.name;
+        } else {
+          json['project_name'] = 'Projet non spécifié';
+        }
+        
+        transactions.add(ProjectTransaction.fromJson(json));
+      }
+      
+      print('RBAC: ${transactions.length} transactions accessibles récupérées');
+      return transactions;
+    } catch (e) {
+      print('Erreur lors de la récupération des transactions accessibles: $e');
+      return [];
+    }
+  }
+
   // Créer une nouvelle transaction de projet
   Future<ProjectTransaction> createTransaction(
     String projectId,

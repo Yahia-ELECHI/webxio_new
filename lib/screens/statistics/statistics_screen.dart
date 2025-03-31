@@ -18,8 +18,124 @@ import '../../widgets/empty_state_widget.dart';
 import '../../widgets/rbac_gated_screen.dart';
 import '../../widgets/permission_gated.dart';
 
+/// Widget qui vérifie les permissions avant d'afficher les statistiques pour éviter le flash de l'écran d'accès refusé
+class StatisticsScreenWrapper extends StatefulWidget {
+  const StatisticsScreenWrapper({super.key});
+
+  @override
+  State<StatisticsScreenWrapper> createState() => _StatisticsScreenWrapperState();
+}
+
+class _StatisticsScreenWrapperState extends State<StatisticsScreenWrapper> {
+  final RoleService _roleService = RoleService();
+  final ProjectService _projectService = ProjectService();
+  bool _isLoading = true;
+  bool _hasPermission = false;
+  String? _projectId;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermission();
+  }
+
+  /// Vérifie la permission avant d'afficher l'écran
+  Future<void> _checkPermission() async {
+    try {
+      // Vérifier si l'utilisateur a la permission globale read_all_projects
+      final hasAllProjectsAccess = await _roleService.hasPermission('read_all_projects');
+      
+      if (hasAllProjectsAccess) {
+        print('=== RBAC DEBUG === [StatisticsScreenWrapper] Utilisateur avec permission read_all_projects, accès autorisé');
+        setState(() {
+          _hasPermission = true;
+          _isLoading = false;
+        });
+        return;
+      }
+      
+      // Récupérer les projets accessibles
+      final projects = await _projectService.getAccessibleProjects();
+      if (projects.isNotEmpty) {
+        // Si l'utilisateur a au moins un projet accessible, autoriser l'accès
+        print('=== RBAC DEBUG === [StatisticsScreenWrapper] Utilisateur avec ${projects.length} projets accessibles, accès autorisé');
+        _projectId = projects.first.id;
+        setState(() {
+          _hasPermission = true;
+          _isLoading = false;
+        });
+        return;
+      } else {
+        print('=== RBAC DEBUG === [StatisticsScreenWrapper] Utilisateur sans projet accessible, accès refusé');
+        setState(() {
+          _hasPermission = false;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Erreur lors de la vérification des permissions: $e');
+      setState(() {
+        _hasPermission = false;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      // Afficher un indicateur de chargement pendant la vérification
+      return Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+    
+    if (!_hasPermission) {
+      // Afficher directement l'écran d'accès refusé
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Accès refusé'),
+          backgroundColor: const Color(0xFF1F4E5F),
+          foregroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.lock, color: Colors.red, size: 80),
+              const SizedBox(height: 20),
+              const Text(
+                'Vous n\'avez pas l\'autorisation d\'accéder aux statistiques',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pushReplacementNamed('/home');
+                },
+                child: const Text('Retour au tableau de bord'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    // Si l'utilisateur a la permission, afficher les statistiques
+    return StatisticsScreen(projectId: _projectId);
+  }
+}
+
 class StatisticsScreen extends StatefulWidget {
-  const StatisticsScreen({Key? key}) : super(key: key);
+  final String? projectId;
+  
+  const StatisticsScreen({
+    Key? key,
+    this.projectId,
+  }) : super(key: key);
 
   @override
   _StatisticsScreenState createState() => _StatisticsScreenState();
@@ -86,16 +202,54 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     });
     
     try {
-      // Récupérer tous les projets et toutes les tâches
-      final projects = await ProjectService().getAllProjects();
-      final tasks = await ProjectService().getAllTasks();
+      print('=== RBAC DEBUG === [StatisticsScreen] Chargement des données avec filtrage RBAC');
+      final projectService = ProjectService();
       
-      // Récupérer les phases des projets
-      final phases = await ProjectService().getAllPhases();
+      // Récupérer uniquement les projets accessibles selon les permissions RBAC
+      final projects = await projectService.getAccessibleProjects();
+      print('=== RBAC DEBUG === [StatisticsScreen] ${projects.length} projets accessibles récupérés');
+      
+      // Extraire les IDs des projets accessibles pour filtrer les tâches
+      final projectIds = projects.map((p) => p.id).toList();
+      print('=== RBAC DEBUG === [StatisticsScreen] IDs des projets accessibles: ${projectIds.join(", ")}');
+      
+      // Si aucun projet accessible, retourner des statistiques vides
+      if (projectIds.isEmpty) {
+        print('=== RBAC DEBUG === [StatisticsScreen] Aucun projet accessible, affichage de statistiques vides');
+        setState(() {
+          _isLoading = false;
+          _totalProjects = 0;
+          _totalTasks = 0;
+          _totalPhases = 0;
+          _completedTasks = 0;
+          _inProgressTasks = 0;
+          _blockedTasks = 0;
+          _pendingTasks = 0;
+          _completionRate = 0;
+          _statCards = _createStatCards();
+          _activityData = [];
+          _statusData = [];
+          _priorityData = [];
+          _projectProgressData = [];
+        });
+        return;
+      }
+      
+      // Récupérer uniquement les tâches des projets accessibles
+      List<Task> tasks = [];
+      if (projectIds.length == 1) {
+        tasks = await projectService.getTasksByProject(projectIds[0]);
+      } else {
+        tasks = await projectService.getTasksForProjects(projectIds);
+      }
+      
+      // Récupérer les phases des projets accessibles
+      final phases = await projectService.getAllPhases();
+      final accessiblePhases = phases.where((phase) => projectIds.contains(phase.projectId)).toList();
       
       _totalProjects = projects.length;
       _totalTasks = tasks.length;
-      _totalPhases = phases.length;
+      _totalPhases = accessiblePhases.length;
       
       // Compter les tâches par statut
       _tasksByStatus = {};
@@ -193,7 +347,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
         );
         
         // Compter les phases par projet
-        final projectPhases = phases.where((phase) => phase.projectId == project.id).toList();
+        final projectPhases = accessiblePhases.where((phase) => phase.projectId == project.id).toList();
         _projectPhaseData.add(
           ProjectPhaseData(
             projectName: project.name,
@@ -204,36 +358,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
       }
       
       // Préparer les cartes de statistiques
-      _statCards = [
-        StatCardData(
-          icon: Icons.folder,
-          title: 'Projets',
-          value: _totalProjects.toString(),
-          color: Colors.blue,
-          secondaryValue: '$_totalPhases phases',
-        ),
-        StatCardData(
-          icon: Icons.task_alt,
-          title: 'Tâches',
-          value: _totalTasks.toString(),
-          color: Colors.purple,
-          secondaryValue: '${_completionRate.toStringAsFixed(1)}% complétées',
-        ),
-        StatCardData(
-          icon: Icons.check_circle,
-          title: 'Complétées',
-          value: _completedTasks.toString(),
-          color: Colors.green,
-          secondaryValue: 'sur $_totalTasks tâches',
-        ),
-        StatCardData(
-          icon: Icons.pending_actions,
-          title: 'En cours',
-          value: _inProgressTasks.toString(),
-          color: Colors.blue,
-          secondaryValue: 'sur $_totalTasks tâches',
-        ),
-      ];
+      _statCards = _createStatCards();
       
       // Préparer les données pour le graphique circulaire
       _statusData = [];
@@ -300,88 +425,85 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
     }
   }
   
+  // Génère les cartes de statistiques basées sur les données chargées
+  List<StatCardData> _createStatCards() {
+    return [
+      StatCardData(
+        title: 'Projets',
+        value: _totalProjects,
+        icon: Icons.folder,
+        color: Colors.blue,
+        suffix: 'projets',
+      ),
+      StatCardData(
+        title: 'Tâches',
+        value: _totalTasks,
+        icon: Icons.task_alt,
+        color: Colors.purple,
+        suffix: 'tâches',
+      ),
+      StatCardData(
+        title: 'Taux de complétion',
+        value: _completionRate.toInt(),
+        icon: Icons.pie_chart,
+        color: Colors.orange,
+        suffix: '%',
+      ),
+      StatCardData(
+        title: 'Phases',
+        value: _totalPhases,
+        icon: Icons.view_timeline,
+        color: Colors.purple,
+        suffix: 'phases',
+      ),
+    ];
+  }
+  
   @override
   Widget build(BuildContext context) {
-    return RbacGatedScreen(
-      permissionName: 'read_all_projects',
-      onAccessDenied: () {
-        print('DEBUG: StatisticsScreen - onAccessDenied appelé');
-        // Afficher seulement un message dans la console sans redirection automatique
-        print('DEBUG: StatisticsScreen - Accès refusé, affichage de l\'écran d\'accès refusé');
-      },
-      accessDeniedWidget: Scaffold(
-        appBar: AppBar(
-          title: const Text('Accès refusé'),
-        ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.lock,
-                size: 80,
-                color: Colors.red,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Vous n\'avez pas l\'autorisation d\'accéder aux statistiques',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  // Navigation à la page d'accueil
-                  Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
-                },
-                child: const Text('Retour au tableau de bord'),
-              ),
-            ],
+    // Afficher directement le contenu sans RbacGatedScreen
+    // puisque le StatisticsScreenWrapper a déjà vérifié les permissions
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Statistiques'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadData,
+            tooltip: 'Actualiser',
           ),
-        ),
-      ),
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Statistiques'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadData,
-              tooltip: 'Actualiser',
-            ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
+          indicatorWeight: 3.0,
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14.0,
+          ),
+          unselectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.normal,
+            fontSize: 14.0,
+          ),
+          tabs: const [
+            Tab(text: 'Aperçu'),
+            Tab(text: 'Projets'),
+            Tab(text: 'Activité'),
           ],
-          bottom: TabBar(
-            controller: _tabController,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            indicatorColor: Colors.white,
-            indicatorWeight: 3.0,
-            labelStyle: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 14.0,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.normal,
-              fontSize: 14.0,
-            ),
-            tabs: const [
-              Tab(text: 'Aperçu'),
-              Tab(text: 'Projets'),
-              Tab(text: 'Activité'),
-            ],
-          ),
         ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildOverviewTab(),
-                  _buildProjectsTab(),
-                  _buildActivityTab(),
-                ],
-              ),
       ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildOverviewTab(),
+                _buildProjectsTab(),
+                _buildActivityTab(),
+              ],
+            ),
     );
   }
 
@@ -1241,16 +1363,18 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
 class StatCardData {
   final IconData icon;
   final String title;
-  final String value;
+  final dynamic value;
   final Color color;
-  final String secondaryValue;
+  final String? secondaryValue;
+  final String? suffix;
 
   StatCardData({
     required this.icon,
     required this.title,
     required this.value,
     required this.color,
-    this.secondaryValue = '',
+    this.secondaryValue,
+    this.suffix,
   });
 }
 

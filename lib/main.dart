@@ -352,9 +352,9 @@ class _MainAppScreenState extends State<MainAppScreen> {
     const DashboardScreen(),
     const ProjectsScreen(),
     const TeamsScreen(),
-    const CalendarScreen(),
-    const StatisticsScreen(),
-    const ProjectFinanceDashboardScreen(), // Nouveau tableau de bord financier avec sélecteur moderne
+    const CalendarScreenWrapper(), // Utilisation du wrapper pour éviter le flash d'écran d'accès refusé
+    const StatisticsScreenWrapper(), // Utilisation du wrapper pour les statistiques
+    const ProjectFinanceDashboardScreenWrapper(), // Utilisation du wrapper pour les finances
     const ProfileScreen(),
   ];
 

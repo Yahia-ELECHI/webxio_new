@@ -9,8 +9,111 @@ import '../../widgets/islamic_patterns.dart';
 import '../../widgets/permission_gated.dart';
 import '../../widgets/rbac_gated_screen.dart';
 
+/// Widget qui vérifie les permissions avant d'afficher le calendrier pour éviter le flash de l'écran d'accès refusé
+class CalendarScreenWrapper extends StatefulWidget {
+  const CalendarScreenWrapper({super.key});
+
+  @override
+  State<CalendarScreenWrapper> createState() => _CalendarScreenWrapperState();
+}
+
+class _CalendarScreenWrapperState extends State<CalendarScreenWrapper> {
+  final RoleService _roleService = RoleService();
+  bool _isLoading = true;
+  bool _hasPermission = false;
+  String? _projectId;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermission();
+  }
+
+  /// Vérifie la permission avant d'afficher l'écran
+  Future<void> _checkPermission() async {
+    try {
+      // Récupérer le premier projet accessible
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId != null) {
+        final projectsResponse = await Supabase.instance.client
+            .from('user_roles')
+            .select('project_id')
+            .eq('user_id', userId)
+            .not('project_id', 'is', null)
+            .limit(1);
+        
+        if (projectsResponse.isNotEmpty) {
+          _projectId = projectsResponse[0]['project_id'] as String;
+          // Vérifier la permission avec le contexte du projet
+          _hasPermission = await _roleService.hasPermission('read_task', projectId: _projectId);
+        }
+      }
+    } catch (e) {
+      print('Erreur lors de la vérification des permissions: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      // Afficher un indicateur de chargement pendant la vérification
+      return Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+    
+    if (!_hasPermission) {
+      // Afficher directement l'écran d'accès refusé
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Accès refusé'),
+          backgroundColor: const Color(0xFF1F4E5F),
+          foregroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.lock, color: Colors.red, size: 80),
+              const SizedBox(height: 20),
+              const Text(
+                'Vous n\'avez pas l\'autorisation d\'accéder au calendrier',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pushReplacementNamed('/home');
+                },
+                child: const Text('Retour au tableau de bord'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    // Si l'utilisateur a la permission, afficher le calendrier avec le bon contexte de projet
+    return CalendarScreen(projectId: _projectId);
+  }
+}
+
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({super.key});
+  final String? projectId;
+  
+  const CalendarScreen({
+    super.key, 
+    this.projectId,
+  });
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -29,17 +132,47 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<Task> _selectedEvents = [];
   
   bool _isLoading = true;
+  String? _firstAccessibleProjectId;
   
   @override
   void initState() {
     super.initState();
     _selectedDay = _focusedDay;
+    _loadUserAccessibleProjectId();
     _loadTasks();
     
     // Tracer les informations sur l'utilisateur au démarrage de l'écran
     _logUserAccessInfo();
   }
-  
+
+  /// Récupère le premier projet accessible à l'utilisateur pour le contexte RBAC
+  Future<void> _loadUserAccessibleProjectId() async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        print('=== RBAC DEBUG === [CalendarScreen] Aucun utilisateur connecté, aucun projet accessible');
+        return;
+      }
+      
+      print('=== RBAC DEBUG === [CalendarScreen] Récupération du premier projet accessible pour contexte RBAC');
+      final accessibleProjectsResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('project_id')
+          .eq('user_id', userId)
+          .not('project_id', 'is', null)
+          .limit(1);
+      
+      if (accessibleProjectsResponse.isNotEmpty) {
+        _firstAccessibleProjectId = accessibleProjectsResponse[0]['project_id'] as String;
+        print('=== RBAC DEBUG === [CalendarScreen] Premier projet accessible trouvé: $_firstAccessibleProjectId');
+      } else {
+        print('=== RBAC DEBUG === [CalendarScreen] Aucun projet accessible trouvé');
+      }
+    } catch (e) {
+      print('=== RBAC DEBUG === [CalendarScreen] Erreur lors de la récupération du projet accessible: $e');
+    }
+  }
+
   /// Journalise les informations détaillées sur l'utilisateur pour le débogage RBAC
   Future<void> _logUserAccessInfo() async {
     try {
@@ -118,7 +251,53 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
     
     try {
-      final tasks = await _projectService.getAllTasks();
+      print('\n=== RBAC DEBUG === [CalendarScreen] Chargement des tâches avec filtrage RBAC');
+      
+      // Récupérer l'ID de l'utilisateur actuel
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        print('=== RBAC DEBUG === [CalendarScreen] Aucun utilisateur connecté, aucune tâche chargée');
+        setState(() {
+          _allTasks = [];
+          _events = {};
+          _isLoading = false;
+        });
+        return;
+      }
+      
+      // Récupérer les projets auxquels l'utilisateur a accès via ses rôles
+      print('=== RBAC DEBUG === [CalendarScreen] Récupération des projets accessibles pour l\'utilisateur');
+      final accessibleProjectsResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('project_id')
+          .eq('user_id', userId)
+          .not('project_id', 'is', null);
+      
+      final accessibleProjectIds = accessibleProjectsResponse
+          .map((item) => item['project_id'] as String)
+          .toList();
+      
+      print('=== RBAC DEBUG === [CalendarScreen] Projets accessibles: ${accessibleProjectIds.join(", ")}');
+      
+      // Si l'utilisateur est un admin système, charger toutes les tâches
+      final isAdmin = await _roleService.hasPermission('read_all_projects');
+      
+      List<Task> tasks;
+      if (isAdmin) {
+        print('=== RBAC DEBUG === [CalendarScreen] Utilisateur admin, chargement de toutes les tâches');
+        tasks = await _projectService.getAllTasks();
+      } else if (accessibleProjectIds.isEmpty) {
+        print('=== RBAC DEBUG === [CalendarScreen] Aucun projet accessible, aucune tâche chargée');
+        setState(() {
+          _allTasks = [];
+          _events = {};
+          _isLoading = false;
+        });
+        return;
+      } else {
+        print('=== RBAC DEBUG === [CalendarScreen] Chargement des tâches pour les projets accessibles');
+        tasks = await _projectService.getTasksForProjects(accessibleProjectIds);
+      }
       
       // Organiser les tâches par date d'échéance
       final events = <DateTime, List<Task>>{};
@@ -149,8 +328,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _selectedEvents = _getEventsForDay(_selectedDay!);
         }
       });
+      
+      print('=== RBAC DEBUG === [CalendarScreen] ${tasks.length} tâches chargées');
     } catch (e) {
-      print('Erreur lors du chargement des tâches: $e');
+      print('=== RBAC DEBUG === [CalendarScreen] Erreur lors du chargement des tâches: $e');
       setState(() {
         _isLoading = false;
       });
@@ -233,6 +414,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     
     return RbacGatedScreen(
       permissionName: 'read_task',
+      projectId: widget.projectId, // Ajout du contexte de projet pour la vérification RBAC
       onAccessDenied: () {
         print('DEBUG: CalendarScreen - onAccessDenied appelé');
         // Afficher seulement un message dans la console sans redirection automatique
@@ -597,12 +779,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         onTap: () async {
           // Vérifier si l'utilisateur a la permission de voir les détails de la tâche
-          final hasPermission = await _roleService.hasPermission(
-            'view_task_details',
+          final hasReadTaskPermission = await _roleService.hasPermission(
+            'read_task',
             projectId: task.projectId,
           );
           
-          if (hasPermission && mounted) {
+          if (!hasReadTaskPermission) {
+            print('=== RBAC DEBUG === [CalendarScreen] Accès refusé aux détails de la tâche: ${task.id}');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Vous n\'avez pas la permission de voir les détails de cette tâche'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+          
+          if (mounted) {
+            print('=== RBAC DEBUG === [CalendarScreen] Accès autorisé aux détails de la tâche: ${task.id}');
             // Naviguer vers les détails de la tâche
             Navigator.pushNamed(
               context,
