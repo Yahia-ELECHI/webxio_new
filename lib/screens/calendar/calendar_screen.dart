@@ -35,17 +35,55 @@ class _CalendarScreenWrapperState extends State<CalendarScreenWrapper> {
       // Récupérer le premier projet accessible
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId != null) {
-        final projectsResponse = await Supabase.instance.client
+        bool hasProject = false;
+        
+        // 1. Vérifier d'abord via l'ancien système (project_id dans user_roles)
+        final directProjectsResponse = await Supabase.instance.client
             .from('user_roles')
             .select('project_id')
             .eq('user_id', userId)
             .not('project_id', 'is', null)
             .limit(1);
         
-        if (projectsResponse.isNotEmpty) {
-          _projectId = projectsResponse[0]['project_id'] as String;
-          // Vérifier la permission avec le contexte du projet
+        if (directProjectsResponse.isNotEmpty) {
+          _projectId = directProjectsResponse[0]['project_id'] as String;
+          hasProject = true;
+        } else {
+          // 2. Si aucun projet trouvé, vérifier via user_role_projects
+          
+          // D'abord, récupérer les IDs des rôles de l'utilisateur
+          final userRolesResponse = await Supabase.instance.client
+              .from('user_roles')
+              .select('id')
+              .eq('user_id', userId)
+              .limit(10);  // Limiter pour éviter une requête trop large
+          
+          if (userRolesResponse.isNotEmpty) {
+            // Pour chaque rôle, vérifier s'il a des projets associés
+            for (final roleData in userRolesResponse) {
+              final roleId = roleData['id'] as String;
+              
+              final linkedProjectsResponse = await Supabase.instance.client
+                  .from('user_role_projects')
+                  .select('project_id')
+                  .eq('user_role_id', roleId)
+                  .limit(1);
+              
+              if (linkedProjectsResponse.isNotEmpty) {
+                _projectId = linkedProjectsResponse[0]['project_id'] as String;
+                hasProject = true;
+                break;  // Arrêter dès qu'on trouve un projet
+              }
+            }
+          }
+        }
+        
+        // Vérifier la permission seulement si on a trouvé un projet
+        if (hasProject) {
           _hasPermission = await _roleService.hasPermission('read_task', projectId: _projectId);
+        } else {
+          // Vérifier si l'utilisateur a la permission globale
+          _hasPermission = await _roleService.hasPermission('read_task');
         }
       }
     } catch (e) {
@@ -267,15 +305,46 @@ class _CalendarScreenState extends State<CalendarScreen> {
       
       // Récupérer les projets auxquels l'utilisateur a accès via ses rôles
       print('=== RBAC DEBUG === [CalendarScreen] Récupération des projets accessibles pour l\'utilisateur');
-      final accessibleProjectsResponse = await Supabase.instance.client
+      
+      // 1. Récupérer les projets via l'ancien système (project_id dans user_roles)
+      final directProjectsResponse = await Supabase.instance.client
           .from('user_roles')
           .select('project_id')
           .eq('user_id', userId)
           .not('project_id', 'is', null);
       
-      final accessibleProjectIds = accessibleProjectsResponse
+      final directProjectIds = directProjectsResponse
           .map((item) => item['project_id'] as String)
           .toList();
+      
+      // 2. Récupérer les projets accessibles via la nouvelle table user_role_projects
+      final userRolesResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('id')
+          .eq('user_id', userId);
+      
+      final userRoleIds = userRolesResponse
+          .map((json) => json['id'] as String)
+          .toList();
+      
+      List<String> linkedProjectIds = [];
+      
+      // Pour chaque rôle, récupérer les projets associés
+      for (final roleId in userRoleIds) {
+        final roleProjectsResponse = await Supabase.instance.client
+            .from('user_role_projects')
+            .select('project_id')
+            .eq('user_role_id', roleId);
+        
+        final roleProjects = roleProjectsResponse
+            .map((json) => json['project_id'] as String)
+            .toList();
+        
+        linkedProjectIds.addAll(roleProjects);
+      }
+      
+      // 3. Combiner tous les IDs de projet (supprimer les doublons avec toSet().toList())
+      final accessibleProjectIds = [...directProjectIds, ...linkedProjectIds].toSet().toList();
       
       print('=== RBAC DEBUG === [CalendarScreen] Projets accessibles: ${accessibleProjectIds.join(", ")}');
       

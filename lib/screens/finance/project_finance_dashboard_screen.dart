@@ -530,7 +530,7 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
         actions: [
           // Affichage du sélecteur de projet uniquement pour les administrateurs qui peuvent gérer les budgets
           PermissionGated(
-            permissionName: 'manage_budget',
+            permissionName: 'read_transaction',
             child: ProjectSelectorButton(
               onPressed: _showProjectSelector,
               showAllProjects: _showAllProjects,

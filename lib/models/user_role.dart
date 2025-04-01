@@ -16,6 +16,7 @@ class UserRole {
   final DateTime? createdAt;
   final String? createdBy;
   final UserProfile? userProfile;
+  final List<dynamic>? associatedProjects;
 
   UserRole({
     required this.id,
@@ -29,6 +30,7 @@ class UserRole {
     this.createdAt,
     this.createdBy,
     this.userProfile,
+    this.associatedProjects,
   });
 
   factory UserRole.fromJson(Map<String, dynamic> json) {
@@ -46,6 +48,7 @@ class UserRole {
           : null,
       createdBy: json['created_by'],
       userProfile: json['profiles'] != null ? UserProfile.fromJson(json['profiles']) : null,
+      associatedProjects: json['associated_projects'],
     );
   }
 
@@ -58,6 +61,7 @@ class UserRole {
       'project_id': projectId,
       'created_at': createdAt?.toIso8601String(),
       'created_by': createdBy,
+      'associated_projects': associatedProjects,
     };
   }
 

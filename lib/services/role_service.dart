@@ -3,6 +3,7 @@ import '../models/role.dart';
 import '../models/permission.dart';
 import '../models/user_role.dart';
 import '../models/user_profile.dart';
+import '../models/project_model.dart';
 
 /// Service pour gérer les rôles et permissions dans le système RBAC
 class RoleService {
@@ -280,15 +281,76 @@ class RoleService {
           .select('''
             *,
             roles (*),
-            teams (*),
-            projects (*)
+            teams (*)
           ''')
           .order('created_at');
       
       print('DEBUG: Réponse user_roles: ${response.length} éléments');
+      if (response.isEmpty) {
+        print('DEBUG: Aucun user_role trouvé dans la base de données');
+        return [];
+      }
       
-      // Récupérer les user_roles
-      List<UserRole> userRoles = response.map((json) => UserRole.fromJson(json)).toList();
+      // Convertir en objets UserRole (sans les projets pour l'instant)
+      List<UserRole> userRoles = [];
+      for (var userRoleJson in response) {
+        print('DEBUG: Traitement du user_role ID: ${userRoleJson['id']}');
+        
+        // Créer l'objet UserRole de base (sans projet)
+        final userRole = UserRole.fromJson(userRoleJson);
+        
+        try {
+          // Récupérer les projets associés à ce user_role depuis la nouvelle table
+          final projectsResponse = await _client
+              .from('user_role_projects')
+              .select('''
+                projects (*)
+              ''')
+              .eq('user_role_id', userRole.id);
+          
+          print('DEBUG: Projets trouvés pour ce user_role: ${projectsResponse.length}');
+          
+          // Si ce rôle a des projets associés via user_role_projects, utiliser le premier pour l'affichage
+          if (projectsResponse.isNotEmpty) {
+            try {
+              final projectData = projectsResponse[0]['projects'];
+              
+              // Créer un objet Project à partir des données JSON
+              final Project projectObject = Project.fromJson(projectData);
+              
+              // Mettre à jour le userRole avec le premier projet trouvé (pour affichage initial)
+              userRoles.add(UserRole(
+                id: userRole.id,
+                userId: userRole.userId,
+                roleId: userRole.roleId,
+                role: userRole.role,
+                teamId: userRole.teamId,
+                team: userRole.team,
+                projectId: projectObject.id,  // Utiliser l'ID du projet
+                project: projectObject,  // Utiliser l'objet Project correctement créé
+                createdAt: userRole.createdAt,
+                createdBy: userRole.createdBy,
+                userProfile: userRole.userProfile,
+                // Stocker tous les projets associés pour usage ultérieur (données brutes)
+                associatedProjects: projectsResponse.map((pr) => pr['projects']).toList(),
+              ));
+            } catch (e) {
+              print('DEBUG: Erreur lors de la conversion du projet: $e');
+              // En cas d'erreur, ajouter quand même le userRole de base
+              userRoles.add(userRole);
+            }
+          } else {
+            // Si aucun projet n'est associé, ajouter le userRole tel quel
+            userRoles.add(userRole);
+          }
+        } catch (e) {
+          print('DEBUG: Erreur lors de la récupération des projets associés: $e');
+          // En cas d'erreur, ajouter quand même le userRole de base
+          userRoles.add(userRole);
+        }
+      }
+      
+      print('DEBUG: Nombre total de user_roles récupérés: ${userRoles.length}');
       
       // Pour chaque userRole, récupérer les informations de profil
       for (var i = 0; i < userRoles.length; i++) {
@@ -313,6 +375,7 @@ class RoleService {
               createdAt: userRoles[i].createdAt,
               createdBy: userRoles[i].createdBy,
               userProfile: UserProfile.fromJson(userProfile),
+              associatedProjects: userRoles[i].associatedProjects,
             );
           }
         } catch (e) {
@@ -336,14 +399,71 @@ class RoleService {
           .select('''
             *,
             roles (*),
-            teams (*),
-            projects (*)
+            teams (*)
           ''')
           .eq('user_id', userId)
           .order('created_at');
       
-      // Récupérer les user_roles
-      List<UserRole> userRoles = response.map((json) => UserRole.fromJson(json)).toList();
+      print('DEBUG: Réponse user_roles pour utilisateur $userId: ${response.length} éléments');
+      
+      // Convertir en objets UserRole (sans les projets pour l'instant)
+      List<UserRole> userRoles = [];
+      for (var userRoleJson in response) {
+        print('DEBUG: Traitement du user_role ID: ${userRoleJson['id']}');
+        
+        // Créer l'objet UserRole de base (sans projet)
+        final userRole = UserRole.fromJson(userRoleJson);
+        
+        try {
+          // Récupérer les projets associés à ce user_role depuis la nouvelle table
+          final projectsResponse = await _client
+              .from('user_role_projects')
+              .select('''
+                projects (*)
+              ''')
+              .eq('user_role_id', userRole.id);
+          
+          print('DEBUG: Projets trouvés pour ce user_role: ${projectsResponse.length}');
+          
+          // Si ce rôle a des projets associés via user_role_projects, utiliser le premier pour l'affichage
+          if (projectsResponse.isNotEmpty) {
+            try {
+              final projectData = projectsResponse[0]['projects'];
+              
+              // Créer un objet Project à partir des données JSON
+              final Project projectObject = Project.fromJson(projectData);
+              
+              // Mettre à jour le userRole avec le premier projet trouvé (pour affichage initial)
+              userRoles.add(UserRole(
+                id: userRole.id,
+                userId: userRole.userId,
+                roleId: userRole.roleId,
+                role: userRole.role,
+                teamId: userRole.teamId,
+                team: userRole.team,
+                projectId: projectObject.id,  // Utiliser l'ID du projet
+                project: projectObject,  // Utiliser l'objet Project correctement créé
+                createdAt: userRole.createdAt,
+                createdBy: userRole.createdBy,
+                userProfile: userRole.userProfile,
+                // Stocker tous les projets associés pour usage ultérieur (données brutes)
+                associatedProjects: projectsResponse.map((pr) => pr['projects']).toList(),
+              ));
+            } catch (e) {
+              print('DEBUG: Erreur lors de la conversion du projet: $e');
+              // En cas d'erreur, ajouter quand même le userRole de base
+              userRoles.add(userRole);
+            }
+          } else {
+            // Si aucun projet n'est associé, ajouter le userRole tel quel
+            userRoles.add(userRole);
+          }
+        } catch (e) {
+          print('DEBUG: Erreur lors de la récupération des projets associés: $e');
+          // En cas d'erreur, ajouter quand même le userRole de base
+          userRoles.add(userRole);
+        }
+      }
       
       // Récupérer les informations de profil de l'utilisateur
       try {
@@ -357,19 +477,22 @@ class RoleService {
           final profile = UserProfile.fromJson(userProfile);
           
           // Mettre à jour tous les UserRole avec les mêmes informations de profil
-          userRoles = userRoles.map((userRole) => UserRole(
-            id: userRole.id,
-            userId: userRole.userId,
-            roleId: userRole.roleId,
-            role: userRole.role,
-            teamId: userRole.teamId,
-            team: userRole.team,
-            projectId: userRole.projectId,
-            project: userRole.project,
-            createdAt: userRole.createdAt,
-            createdBy: userRole.createdBy,
-            userProfile: profile,
-          )).toList();
+          for (int i = 0; i < userRoles.length; i++) {
+            userRoles[i] = UserRole(
+              id: userRoles[i].id,
+              userId: userRoles[i].userId,
+              roleId: userRoles[i].roleId,
+              role: userRoles[i].role,
+              teamId: userRoles[i].teamId,
+              team: userRoles[i].team,
+              projectId: userRoles[i].projectId,
+              project: userRoles[i].project,
+              createdAt: userRoles[i].createdAt,
+              createdBy: userRoles[i].createdBy,
+              userProfile: profile,
+              associatedProjects: userRoles[i].associatedProjects,
+            );
+          }
         }
       } catch (e) {
         print('Erreur lors de la récupération du profil utilisateur $userId: $e');
