@@ -14,6 +14,7 @@ import '../../widgets/rbac_gated_screen.dart';
 import 'project_detail_screen.dart';
 import 'project_form_screen.dart';
 import 'widgets/modern_project_card.dart';
+import '../../services/cache_service.dart'; // Importer le CacheService
 
 class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({super.key});
@@ -27,6 +28,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   final TeamService _teamService = TeamService();
   final AuthService _authService = AuthService();
   final RoleService _roleService = RoleService();
+  final CacheService _cacheService = CacheService(); // Initialiser le CacheService
   
   List<Project> _projects = [];
   Map<String, int> _projectTeamCounts = {};
@@ -69,16 +71,48 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         return;
       }
       
-      // Extraire les IDs des projets auxquels l'utilisateur a accès via ses rôles
-      final projectIds = userRolesDetails
+      // Extraire les IDs des projets auxquels l'utilisateur a accès via ses rôles (méthode legacy)
+      final directProjectIds = userRolesDetails
           .where((role) => role['project_id'] != null)
           .map((role) => role['project_id'] as String)
           .toSet()
           .toList();
       
-      print('DEBUG: Projets accessibles: $projectIds');
+      // Récupérer les projets via la nouvelle table user_role_projects
+      Set<String> linkedProjectIds = {};
       
-      if (projectIds.isEmpty) {
+      // Récupérer les IDs des rôles de l'utilisateur
+      final userRolesResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('id')
+          .eq('user_id', userId);
+      
+      final userRoleIds = userRolesResponse
+          .map<String>((json) => json['id'] as String)
+          .toList();
+      
+      // Pour chaque rôle, récupérer les projets associés
+      for (final roleId in userRoleIds) {
+        final roleProjectsResponse = await Supabase.instance.client
+            .from('user_role_projects')
+            .select('project_id')
+            .eq('user_role_id', roleId);
+        
+        final roleProjects = roleProjectsResponse
+            .map<String>((json) => json['project_id'] as String)
+            .toList();
+        
+        linkedProjectIds.addAll(roleProjects);
+      }
+      
+      // Combiner tous les IDs de projet (directement associés et liés via user_role_projects)
+      final allProjectIds = [...directProjectIds, ...linkedProjectIds].toSet().toList();
+      
+      print('DEBUG: Projets accessibles via user_roles.project_id: $directProjectIds');
+      print('DEBUG: Projets accessibles via user_role_projects: ${linkedProjectIds.toList()}');
+      print('DEBUG: Tous les projets accessibles: $allProjectIds');
+      
+      if (allProjectIds.isEmpty) {
         // Aucun projet spécifique trouvé, vérifier une dernière fois via hasPermission
         final hasGlobalAccess = await _roleService.hasPermission('read_project');
         
@@ -97,7 +131,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         });
         
         // Charger uniquement les projets accessibles à l'utilisateur
-        _loadUserProjects(projectIds);
+        _loadUserProjects(allProjectIds);
       }
     } catch (e) {
       print('ERROR: Erreur lors de la vérification de l\'accès aux projets: $e');
@@ -170,6 +204,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         _errorMessage = null;
       });
 
+      // Forcer le rafraîchissement des projets sans utiliser le cache
+      // pour s'assurer que tous les projets sont récupérés de la base de données
+      await _cacheService.invalidateProjectsCache();
       final projects = await _projectService.getAllProjects();
       
       // Récupérer le nombre d'équipes pour chaque projet
@@ -233,27 +270,44 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                   );
                   
                   if (result == true) {
-                    // Recharger les projets en respectant les droits d'accès
-                    if (_hasProjectAccess) {
-                      final userRolesDetails = await _roleService.getUserRolesDetails();
-                      final isSystemAdmin = userRolesDetails.any((role) => role['role_name'] == 'system_admin');
-                      
-                      if (isSystemAdmin) {
-                        _loadProjects();
-                      } else {
-                        final projectIds = userRolesDetails
-                            .where((role) => role['project_id'] != null)
-                            .map((role) => role['project_id'] as String)
-                            .toSet()
-                            .toList();
-                        
-                        _loadUserProjects(projectIds);
-                      }
-                    }
+                    // Utiliser _checkProjectAccess() pour respecter le système RBAC
+                    // au lieu de _loadProjects() qui charge tous les projets sans filtrer
+                    await _checkProjectAccess();
                   }
                 },
               ),
             ),
+            
+            // Bouton de rafraîchissement du cache
+            if (_hasProjectAccess) // Visible pour tous les utilisateurs ayant accès aux projets
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Actualiser les projets',
+                onPressed: () async {
+                  // Afficher un indicateur de chargement
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Actualisation des projets en cours...'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                  
+                  // Forcer la mise à jour des projets en invalidant le cache
+                  await _cacheService.invalidateProjectsCache();
+                  
+                  // Utiliser _checkProjectAccess() qui respecte le système RBAC
+                  // au lieu de _loadProjects() qui charge tous les projets
+                  await _checkProjectAccess();
+                  
+                  // Notification de succès
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Projets actualisés avec succès !'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+              ),
         ],
       ),
       body: _isLoading

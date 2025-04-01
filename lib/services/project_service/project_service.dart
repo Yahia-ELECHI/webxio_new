@@ -150,6 +150,12 @@ class ProjectService {
       if (!hasPermission) {
         throw Exception('Vous n\'avez pas l\'autorisation de créer un projet');
       }
+
+      // Récupérer l'ID de l'utilisateur
+      final userId = _authService.currentUser?.id;
+      if (userId == null) {
+        throw Exception('Aucun utilisateur connecté');
+      }
       
       final response = await _client
           .from(_projectsTable)
@@ -158,6 +164,18 @@ class ProjectService {
           .single();
       
       final createdProject = Project.fromJson(response);
+      
+      // Associer automatiquement le projet à l'utilisateur qui l'a créé
+      try {
+        await _client.rpc('auto_assign_project_to_creator', params: {
+          'p_project_id': createdProject.id,
+          'p_user_id': userId,
+        });
+        print('Projet ${createdProject.id} automatiquement associé au créateur $userId');
+      } catch (e) {
+        // Ne pas bloquer la création du projet si l'association échoue
+        print('Erreur lors de l\'association automatique du projet à son créateur: $e');
+      }
       
       // Envoyer une notification pour la création du projet
       await _notifyProjectCreation(createdProject);
@@ -841,39 +859,80 @@ class ProjectService {
       
       print('RBAC: Récupération des projets accessibles pour l\'utilisateur: ${user.id}');
       
-      // Récupérer les projets accessibles via les rôles de l'utilisateur
-      final accessibleProjectsResponse = await Supabase.instance.client
+      // 1. Récupérer les projets accessibles via l'ancien field project_id dans user_roles
+      final directProjectsResponse = await Supabase.instance.client
           .from('user_roles')
           .select('project_id')
           .eq('user_id', user.id)
           .not('project_id', 'is', null);
       
-      final accessibleProjectIds = accessibleProjectsResponse
+      final directProjectIds = directProjectsResponse
           .map<String>((json) => json['project_id'] as String)
           .toList();
       
-      if (accessibleProjectIds.isEmpty) {
+      // 2. Récupérer les projets accessibles via la nouvelle table user_role_projects
+      final userRolesResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('id')
+          .eq('user_id', user.id);
+      
+      final userRoleIds = userRolesResponse
+          .map<String>((json) => json['id'] as String)
+          .toList();
+      
+      List<String> linkedProjectIds = [];
+      
+      if (userRoleIds.isNotEmpty) {
+        // Traiter les user_role_ids par lots comme nous le faisons pour les projets
+        const batchSize = 10;
+        for (int i = 0; i < userRoleIds.length; i += batchSize) {
+          final endIdx = (i + batchSize < userRoleIds.length) 
+              ? i + batchSize 
+              : userRoleIds.length;
+          final currentBatch = userRoleIds.sublist(i, endIdx);
+          
+          // Pour chaque lot, récupérer les projets associés
+          for (final roleId in currentBatch) {
+            final roleProjectsResponse = await Supabase.instance.client
+                .from('user_role_projects')
+                .select('project_id')
+                .eq('user_role_id', roleId);
+            
+            final roleProjects = roleProjectsResponse
+                .map<String>((json) => json['project_id'] as String)
+                .toList();
+            
+            linkedProjectIds.addAll(roleProjects);
+          }
+        }
+      }
+      
+      // 3. Combiner tous les IDs de projet (supprimer les doublons avec toSet().toList())
+      final allProjectIds = [...directProjectIds, ...linkedProjectIds].toSet().toList();
+      
+      if (allProjectIds.isEmpty) {
         print('RBAC: Aucun projet accessible pour l\'utilisateur');
         return [];
       }
       
-      print('RBAC: Projets accessibles IDs: ${accessibleProjectIds.join(", ")}');
+      print('RBAC: Projets accessibles IDs: ${allProjectIds.join(", ")}');
       
       // Récupérer les détails des projets accessibles
       List<Project> projects = [];
       
       // Traiter les projets par lots pour éviter une requête trop longue
       const batchSize = 10;
-      for (int i = 0; i < accessibleProjectIds.length; i += batchSize) {
-        final endIdx = (i + batchSize < accessibleProjectIds.length) 
+      for (int i = 0; i < allProjectIds.length; i += batchSize) {
+        final endIdx = (i + batchSize < allProjectIds.length) 
             ? i + batchSize 
-            : accessibleProjectIds.length;
-        final currentBatch = accessibleProjectIds.sublist(i, endIdx);
+            : allProjectIds.length;
+        final currentBatch = allProjectIds.sublist(i, endIdx);
         
-        // Construire une requête OR pour chaque ID de projet dans le lot
+        // Construire une requête manuellement car la méthode in_ n'est pas disponible
+        // dans cette version de postgrest
         final query = _client.from(_projectsTable).select();
         
-        // Si nous avons un seul ID dans ce lot, utilisez eq directement
+        // Si nous avons un seul projet, utiliser eq() directement
         if (currentBatch.length == 1) {
           final batchResponse = await query
               .eq('id', currentBatch[0])
