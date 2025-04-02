@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/task_model.dart';
 import '../../models/project_model.dart';
 import '../../models/phase_model.dart';
@@ -13,7 +14,10 @@ import '../../services/budget_service.dart';
 import '../../services/user_service.dart';
 import '../../services/project_finance_service.dart';
 import '../../services/cache_service.dart';
+import '../../services/role_service.dart';
+import '../../providers/role_provider.dart';
 import '../../main.dart'; // Import pour utiliser MainAppScreen
+import '../../widgets/permission_gated.dart'; // Import pour PermissionGated
 import 'models/dashboard_chart_models.dart';
 import 'sections/tasks_projects_section.dart';
 import 'sections/phases_section.dart';
@@ -37,6 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final UserService _userService = UserService();
   final ProjectFinanceService _projectFinanceService = ProjectFinanceService();
   final CacheService _cacheService = CacheService();
+  final RoleService _roleService = RoleService();
 
   bool _isLoading = true;
 
@@ -118,12 +123,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _projectTransactionsList = cachedTransactions.map((json) => ProjectTransaction.fromJson(json)).toList();
           }
 
+          // Filtrer les tâches par projets accessibles
+          final Set<String> accessibleProjectIds = _projectsList.map((p) => p.id).toSet();
+          _tasksList = _tasksList.where((task) => accessibleProjectIds.contains(task.projectId)).toList();
+
+          // Filtrer les phases par projets accessibles
+          _phasesList = _phasesList.where((phase) => accessibleProjectIds.contains(phase.projectId)).toList();
+
+          // Filtrer les transactions par projets accessibles
+          _projectTransactionsList = _projectTransactionsList.where((tx) => accessibleProjectIds.contains(tx.projectId)).toList();
+
           // Créer mapping des tâches
           _tasksMap = {for (var task in _tasksList) task.id: task};
 
           // Mise à jour des graphiques avec les données disponibles
           _isLoading = false; // Marquer comme chargé avant de préparer les graphiques (pour afficher l'UI)
-          
+
           // Lancer la préparation des graphiques de manière asynchrone
           _prepareAllChartData().then((_) {
             // Rafraîchir l'UI quand les données du budget planifié sont prêtes
@@ -157,7 +172,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Chargement parallèle des données avec Future.wait pour optimiser le temps de chargement
       // (tous les appels API sont lancés en même temps)
       final results = await Future.wait([
-        _projectService.getAllProjects(),
+        _projectService.getAccessibleProjects(), // Utiliser getAccessibleProjects() au lieu de getAllProjects() pour respecter RBAC
         _taskService.getAllTasks(),
         _phaseService.getAllPhases(),
         _projectFinanceService.getAllProjectTransactions(),
@@ -173,7 +188,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _budgetsList = results[4] as List<Budget>;
       _budgetTransactionsList = results[5] as List<BudgetTransaction>;
 
-      // Créer un mapping des tâches
+      // Filtrer les tâches par projets accessibles
+      final Set<String> accessibleProjectIds = _projectsList.map((p) => p.id).toSet();
+      _tasksList = _tasksList.where((task) => accessibleProjectIds.contains(task.projectId)).toList();
+
+      // Filtrer les phases par projets accessibles
+      _phasesList = _phasesList.where((phase) => accessibleProjectIds.contains(phase.projectId)).toList();
+
+      // Filtrer les transactions par projets accessibles
+      _projectTransactionsList = _projectTransactionsList.where((tx) => accessibleProjectIds.contains(tx.projectId)).toList();
+
+      // Créer mapping des tâches
       _tasksMap = {for (var task in _tasksList) task.id: task};
 
       // Charger l'historique des tâches récentes (limité à 50)
@@ -208,9 +233,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Version non-bloquante du chargement complet qui s'exécute en arrière-plan
   Future<void> _loadFullDataInBackground() async {
     try {
-      // Le même chargement mais en arrière-plan
+      // Chargement en parallèle pour optimiser
       final results = await Future.wait([
-        _projectService.getAllProjects(),
+        _projectService.getAccessibleProjects(), // Utiliser getAccessibleProjects() au lieu de getAllProjects() pour respecter RBAC
         _taskService.getAllTasks(),
         _phaseService.getAllPhases(),
         _projectFinanceService.getAllProjectTransactions(),
@@ -218,61 +243,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _budgetService.getRecentTransactions(10),
       ]);
 
-      // Récupération des résultats avec cast explicite
-      final projects = results[0] as List<Project>;
-      final tasks = results[1] as List<Task>;
-      final phases = results[2] as List<Phase>;
-      final projectTransactions = results[3] as List<ProjectTransaction>;
-      final budgets = results[4] as List<Budget>;
-      final budgetTransactions = results[5] as List<BudgetTransaction>;
+      if (!mounted) return;
 
-      // Mise en cache des nouvelles données
-      if (projects.isNotEmpty) {
-        _cacheService.cacheProjects(projects.map((p) => p.toJson()).toList());
-      }
+      // Mise à jour du state (dans un bloc setState pour n'avoir qu'une seule reconstruction)
+      setState(() {
+        // Récupération des résultats avec cast explicite
+        final newProjects = results[0] as List<Project>;
+        final newTasks = results[1] as List<Task>;
+        final newPhases = results[2] as List<Phase>;
+        final newTransactions = results[3] as List<ProjectTransaction>;
+        final newBudgets = results[4] as List<Budget>;
+        final newBudgetTransactions = results[5] as List<BudgetTransaction>;
 
-      if (tasks.isNotEmpty) {
-        _cacheService.cacheTasks(null, tasks.map((t) => t.toJson()).toList());
-      }
+        // Filtrer les tâches par projets accessibles
+        final Set<String> accessibleProjectIds = newProjects.map((p) => p.id).toSet();
+        final filteredTasks = newTasks.where((task) => accessibleProjectIds.contains(task.projectId)).toList();
 
-      if (phases.isNotEmpty) {
-        _cacheService.cachePhases(null, phases.map((p) => p.toJson()).toList());
-      }
+        // Filtrer les phases par projets accessibles
+        final filteredPhases = newPhases.where((phase) => accessibleProjectIds.contains(phase.projectId)).toList();
 
-      if (projectTransactions.isNotEmpty) {
-        _cacheService.cacheTransactions(null, projectTransactions.map((t) => t.toJson()).toList());
-      }
+        // Filtrer les transactions par projets accessibles
+        final filteredTransactions = newTransactions.where((tx) => accessibleProjectIds.contains(tx.projectId)).toList();
 
-      // Si le widget est toujours monté, mettre à jour les données
+        // Mettre à jour le state avec les données filtrées
+        _projectsList = newProjects;
+        _tasksList = filteredTasks;
+        _phasesList = filteredPhases;
+        _projectTransactionsList = filteredTransactions;
+        _budgetsList = newBudgets;
+        _budgetTransactionsList = newBudgetTransactions;
+
+        // Recréer le mapping des tâches
+        _tasksMap = {for (var task in _tasksList) task.id: task};
+
+        // Mettre en cache pour la prochaine visite
+        if (_projectsList.isNotEmpty) {
+          _cacheService.cacheProjects(_projectsList.map((p) => p.toJson()).toList());
+        }
+
+        if (_tasksList.isNotEmpty) {
+          _cacheService.cacheTasks(null, _tasksList.map((t) => t.toJson()).toList());
+        }
+
+        if (_phasesList.isNotEmpty) {
+          _cacheService.cachePhases(null, _phasesList.map((p) => p.toJson()).toList());
+        }
+
+        if (_projectTransactionsList.isNotEmpty) {
+          _cacheService.cacheTransactions(null, _projectTransactionsList.map((t) => t.toJson()).toList());
+        }
+      });
+
+      // Charger l'historique des tâches récentes (limité à 50)
+      await _loadTaskHistory();
+
+      // Mise à jour des graphiques après avoir tout chargé
+      await _prepareAllChartData();
+
       if (mounted) {
-        setState(() {
-          _projectsList = projects;
-          _tasksList = tasks;
-          _phasesList = phases;
-          _projectTransactionsList = projectTransactions;
-          _budgetsList = budgets;
-          _budgetTransactionsList = budgetTransactions;
-
-          // Créer un mapping des tâches
-          _tasksMap = {for (var task in _tasksList) task.id: task};
-
-          // Préparer toutes les données pour les graphiques
-          _prepareAllChartData().then((_) {
-            // Rafraîchir l'UI quand les données du budget planifié sont prêtes
-            if (mounted) setState(() {});
-          });
-        });
-
-        // Charger l'historique des tâches en arrière-plan et mettre à jour l'interface
-        _loadTaskHistory().then((_) {
-          if (mounted) {
-            setState(() {});
-          }
-        });
+        setState(() {}); // Déclenche un rebuild pour afficher les données fraîches
       }
     } catch (e) {
-      // Silencieux en arrière-plan pour ne pas déranger l'utilisateur
-      print('Erreur lors du chargement en arrière-plan: $e');
+      print('Erreur lors du chargement des données en arrière-plan: $e');
+      // On ne montre pas d'erreur à l'utilisateur car c'est un chargement en arrière-plan
     }
   }
 
@@ -325,7 +358,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<Task> filteredTasks = _tasksList;
     List<Phase> filteredPhases = _phasesList;
     List<ProjectTransaction> filteredTransactions = _projectTransactionsList;
-    
+
     // Si un projet spécifique est sélectionné, filtrer toutes les données
     if (!_showAllProjects && _selectedProjectId != null) {
       // Filtrer les tâches du projet sélectionné
@@ -334,13 +367,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       filteredPhases = _phasesList.where((phase) => phase.projectId == _selectedProjectId).toList();
       // Filtrer les transactions du projet sélectionné
       filteredTransactions = _projectTransactionsList.where((tx) => tx.projectId == _selectedProjectId).toList();
-      
-      print('Projet sélectionné: $_selectedProjectId - Filtrage appliqué');
-      print('Tâches filtrées: ${filteredTasks.length}/${_tasksList.length}');
-      print('Phases filtrées: ${filteredPhases.length}/${_phasesList.length}');
-      print('Transactions filtrées: ${filteredTransactions.length}/${_projectTransactionsList.length}');
-    } else {
-      print('Tous les projets sont sélectionnés - Aucun filtrage appliqué');
     }
 
     _prepareTasksByStatusData(filteredTasks);
@@ -397,12 +423,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks) async {
     // Liste temporaire pour stocker les résultats
     final List<ProjectProgressData> tempData = [];
-    
+
+    print('=== DEBUG CHART === _prepareProjectProgressData');
+    print('Mode "Tous les projets": $_showAllProjects');
+    print('Projet sélectionné: ${_selectedProjectId ?? "Aucun"}');
+    print('Nombre de projets à traiter: ${projects.length}');
+    if (projects.isNotEmpty) {
+      print('Liste des projets à traiter:');
+      for (var project in projects) {
+        print('- ${project.name} (ID: ${project.id})');
+      }
+    }
+
     // Traiter chaque projet
     for (var project in projects) {
+      print('=== DEBUG CHART === Traitement du projet: ${project.name} (ID: ${project.id})');
+
+      // Vérifier si ce projet devrait être inclus dans le graphique
+      bool shouldIncludeProject = _showAllProjects || project.id == _selectedProjectId;
+      print('Ce projet doit-il être inclus? $shouldIncludeProject');
+
+      if (!shouldIncludeProject) {
+        print('Projet ignoré car nous sommes en mode projet spécifique et ce n\'est pas le projet sélectionné');
+        continue; // Passer au projet suivant si ce n'est pas celui sélectionné en mode projet spécifique
+      }
+
       // Calcul du pourcentage de progression
       final projectPhases = phases.where((phase) => phase.projectId == project.id).toList();
       final projectTasks = tasks.where((task) => task.projectId == project.id).toList();
+
+      print('Nombre de phases pour ce projet: ${projectPhases.length}');
+      print('Nombre de tâches pour ce projet: ${projectTasks.length}');
 
       double progressPercentage = 0;
       if (projectTasks.isNotEmpty) {
@@ -411,6 +462,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           task.status.toLowerCase() == 'completed'
         ).length;
         progressPercentage = (completedTasks / projectTasks.length) * 100;
+        print('Progression du projet: $progressPercentage% ($completedTasks/${projectTasks.length} tâches terminées)');
+      } else {
+        print('Aucune tâche pour ce projet, progression à 0%');
       }
 
       // Calcul du pourcentage d'utilisation du budget basé sur les transactions accessibles
@@ -451,7 +505,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             totalRevenues = usedBudget; // Par défaut, les revenus égalent les dépenses (budget consommé à 100%)
           }
           budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
-          
+
           // Calcul du pourcentage par rapport au budget prévu (statique)
           if (plannedBudget > 0) {
             plannedBudgetUsagePercentage = (usedBudget / plannedBudget) * 100;
@@ -462,7 +516,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         } else {
           // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
           budgetUsagePercentage = project.budgetUsagePercentage;
-          
+
           // Calculer le pourcentage par rapport au budget prévu
           if (plannedBudget > 0 && project.budgetConsumed != null) {
             plannedBudgetUsagePercentage = (project.budgetConsumed! / plannedBudget) * 100;
@@ -470,7 +524,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           } else {
             plannedBudgetUsagePercentage = 0;
           }
-          
+
           // Utiliser les valeurs par défaut du projet
           if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
             totalRevenues = project.budgetAllocated!;
@@ -482,7 +536,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       } else {
         // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
         budgetUsagePercentage = project.budgetUsagePercentage;
-        
+
         // Calculer le pourcentage par rapport au budget prévu
         if (plannedBudget > 0 && project.budgetConsumed != null) {
           plannedBudgetUsagePercentage = (project.budgetConsumed! / plannedBudget) * 100;
@@ -490,7 +544,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         } else {
           plannedBudgetUsagePercentage = 0;
         }
-        
+
         // Utiliser les valeurs par défaut du projet
         if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
           totalRevenues = project.budgetAllocated!;
@@ -518,12 +572,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         budgetUsagePercentage: budgetUsagePercentage,
         plannedBudgetUsagePercentage: plannedBudgetUsagePercentage,
         budgetAmount: totalRevenues,
-        plannedBudgetAmount: plannedBudget, 
+        plannedBudgetAmount: plannedBudget,
         usedBudgetAmount: usedBudget,
         progressColor: _getProgressColor(progressPercentage),
       ));
     }
-    
+
     // Mettre à jour la liste finale
     setState(() {
       _projectProgressData = tempData;
@@ -950,7 +1004,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
       await _loadFullData();
     } catch (e) {
@@ -994,83 +1048,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         );
       },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _refreshDashboard,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildWelcomeHeader(),
-                    const SizedBox(height: 24),
-                    _buildSummaryCards(),
-                    const SizedBox(height: 24),
-
-                    // Section des tâches et projets
-                    SizedBox(
-                      height: 730,
-                      child: TasksProjectsSection(
-                        tasksByStatusData: _tasksByStatusData,
-                        tasksByPriorityData: _tasksByPriorityData,
-                        projectProgressData: _projectProgressData,
-                        upcomingTasksData: _upcomingTasksData,
-                        onSeeAllProjects: _navigateToProjectsList,
-                        onSeeAllTasks: _navigateToTasksList,
-                        onProjectTap: _navigateToProjectDetails,
-                        onTaskTap: _navigateToTaskDetails,
-                      ),
-                    ),
-
-                    const SizedBox(height: 30),
-
-                    // Section des phases
-                    SizedBox(
-                      height: 350,
-                      child: PhasesSection(
-                        phaseProgressData: _phaseProgressData,
-                        onSeeAllPhases: _navigateToPhasesList,
-                        onPhaseTap: _navigateToPhaseDetails,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Section budget et finances
-                    SizedBox(
-                      height: 600,
-                      child: CagnotteWebView(
-                        title: 'Cagnotte en ligne',
-                        onSeeAllPressed: _navigateToBudgetScreen,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Section historique des tâches
-                    SizedBox(
-                      height: 400,
-                      child: TaskHistorySection(
-                        taskHistoryData: _taskHistoryList,
-                        userDisplayNames: _userDisplayNames,
-                        tasksMap: _tasksMap,
-                        onSeeAllHistory: null, // Ajoutez une fonction si besoin d'avoir un écran dédié
-                        onTaskTap: _navigateToTaskDetails,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ),
-            ),
     );
   }
 
@@ -1158,7 +1135,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<Task> filteredTasks = _tasksList;
     List<Phase> filteredPhases = _phasesList;
     List<Project> relevantProjects = _projectsList;
-    
+
     if (!_showAllProjects && _selectedProjectId != null) {
       filteredTasks = _tasksList.where((task) => task.projectId == _selectedProjectId).toList();
       filteredPhases = _phasesList.where((phase) => phase.projectId == _selectedProjectId).toList();
@@ -1227,8 +1204,236 @@ class _DashboardScreenState extends State<DashboardScreen> {
       onTap: onTap,
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _refreshDashboard,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildWelcomeHeader(),
+                    const SizedBox(height: 24),
+                    _buildSummaryCards(),
+                    const SizedBox(height: 24),
+
+                    // Section des tâches et projets - Nécessite la permission read_task
+                    FutureBuilder<bool>(
+                      future: _checkTasksAccessPermission(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+
+                        final hasAccess = snapshot.data ?? false;
+
+                        if (hasAccess) {
+                          return SizedBox(
+                            height: 730,
+                            child: TasksProjectsSection(
+                              tasksByStatusData: _tasksByStatusData,
+                              tasksByPriorityData: _tasksByPriorityData,
+                              projectProgressData: _projectProgressData,
+                              upcomingTasksData: _upcomingTasksData,
+                              onSeeAllProjects: _navigateToProjectsList,
+                              onSeeAllTasks: _navigateToTasksList,
+                              onProjectTap: _navigateToProjectDetails,
+                              onTaskTap: _navigateToTaskDetails,
+                            ),
+                          );
+                        } else {
+                          return Container(
+                            height: 200,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.lock_outline, size: 48, color: Colors.grey[400]),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Vous n\'avez pas accès aux tâches',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Contactez un administrateur pour obtenir les permissions nécessaires',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey[500],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 30),
+
+                    // Section des phases - Nécessite la permission read_phase
+                    FutureBuilder<bool>(
+                      future: _checkPhasesAccessPermission(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+
+                        final hasAccess = snapshot.data ?? false;
+
+                        if (hasAccess) {
+                          return SizedBox(
+                            height: 350,
+                            child: PhasesSection(
+                              phaseProgressData: _phaseProgressData,
+                              onSeeAllPhases: _navigateToPhasesList,
+                              onPhaseTap: _navigateToPhaseDetails,
+                            ),
+                          );
+                        } else {
+                          return Container(); // Section masquée si pas d'accès
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Section budget et finances - Nécessite la permission read_transaction
+                    FutureBuilder<bool>(
+                      future: _checkFinanceAccessPermission(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+
+                        final hasAccess = snapshot.data ?? false;
+
+                        if (hasAccess) {
+                          return SizedBox(
+                            height: 600,
+                            child: CagnotteWebView(
+                              title: 'Cagnotte en ligne',
+                              onSeeAllPressed: _navigateToBudgetScreen,
+                            ),
+                          );
+                        } else {
+                          return Container(); // Section masquée si pas d'accès
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Section de l'historique des tâches - Nécessite read_task
+                    FutureBuilder<bool>(
+                      future: _checkTasksAccessPermission(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+
+                        final hasAccess = snapshot.data ?? false;
+
+                        if (hasAccess) {
+                          return SizedBox(
+                            height: 500,
+                            child: TaskHistorySection(
+                              taskHistoryData: _taskHistoryList,
+                              userDisplayNames: _userDisplayNames,
+                              tasksMap: _tasksMap,
+                              onTaskTap: _navigateToTaskDetails,
+                            ),
+                          );
+                        } else {
+                          return Container(); // Section masquée si pas d'accès
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  // Méthodes de vérification d'accès pour chaque section
+  Future<bool> _checkTasksAccessPermission() async {
+    try {
+      // Vérifier si l'utilisateur a le rôle "observer"
+      final userRoles = await _roleService.getUserRolesWithoutParam();
+
+      if (userRoles.contains('observer')) {
+        return true;
+      }
+
+      // Si n'est pas un observer, vérifier la permission standard
+      final hasPermission = await Provider.of<RoleProvider>(context, listen: false)
+          .hasPermission('read_task');
+      return hasPermission;
+    } catch (e) {
+      print('Erreur lors de la vérification de l\'accès aux tâches: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _checkPhasesAccessPermission() async {
+    try {
+      // Vérifier si l'utilisateur a le rôle "observer"
+      final userRoles = await _roleService.getUserRolesWithoutParam();
+
+      if (userRoles.contains('observer')) {
+        return true;
+      }
+
+      // Si n'est pas un observer, vérifier la permission standard
+      final hasPermission = await Provider.of<RoleProvider>(context, listen: false)
+          .hasPermission('read_phase');
+      return hasPermission;
+    } catch (e) {
+      print('Erreur lors de la vérification de l\'accès aux phases: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _checkFinanceAccessPermission() async {
+    try {
+      // Vérifier si l'utilisateur a le rôle "observer"
+      final userRoles = await _roleService.getUserRolesWithoutParam();
+
+      if (userRoles.contains('observer')) {
+        return true;
+      }
+
+      // Si n'est pas un observer, vérifier la permission standard
+      final hasPermission = await Provider.of<RoleProvider>(context, listen: false)
+          .hasPermission('read_transaction');
+      return hasPermission;
+    } catch (e) {
+      print('Erreur lors de la vérification de l\'accès aux finances: $e');
+      return false;
+    }
+  }
 }
 
+// Widget de carte de résumé pour le tableau de bord
 class SummaryCardWidget extends StatefulWidget {
   final String title;
   final String value;
@@ -1264,7 +1469,7 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
     final double containerSize = isSmallScreen ? 32 : 40;
     final double fontSize = isSmallScreen ? 11 : (isMediumScreen ? 12 : 15);
     final double titleFontSize = isSmallScreen ? 10 : (isMediumScreen ? 11 : 12);
-    final EdgeInsets padding = isSmallScreen 
+    final EdgeInsets padding = isSmallScreen
         ? const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0)
         : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0);
 
@@ -1320,33 +1525,31 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                   ],
                 ),
               ),
-              // Étiquette transparente qui apparaît lors du clic
-              //if (_isPressed)
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 8.0),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(12),
-                        bottomRight: Radius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      widget.title,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: titleFontSize,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 8.0),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(12),
+                      bottomRight: Radius.circular(12),
                     ),
                   ),
+                  child: Text(
+                    widget.title,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: titleFontSize,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+              ),
             ],
           ),
         ),

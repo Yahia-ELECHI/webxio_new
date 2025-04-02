@@ -37,6 +37,18 @@ class RoleProvider extends ChangeNotifier {
     );
     
     print('DEBUG: RoleProvider.hasPermission() - Résultat du service: $hasPermission');
+    
+    // Journalisation détaillée des rôles de l'utilisateur pour diagnostic
+    try {
+      final userRoles = await _roleService.getUserRolesWithoutParam();
+      print('DEBUG: RoleProvider.hasPermission() - Rôles de l\'utilisateur: $userRoles');
+      
+      final rolesDetails = await _roleService.getUserRolesDetails();
+      print('DEBUG: RoleProvider.hasPermission() - Détails des rôles: $rolesDetails');
+    } catch (e) {
+      print('DEBUG: RoleProvider.hasPermission() - Erreur lors de la récupération des détails des rôles: $e');
+    }
+    
     _permissionCache[cacheKey] = hasPermission;
     return hasPermission;
   }

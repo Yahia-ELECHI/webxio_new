@@ -1036,53 +1036,140 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                   ),
                 )
               : null,
-          trailing: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${transaction.isIncome ? '+' : '-'}${NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(transaction.absoluteAmount)}',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: transaction.isIncome ? Colors.green : Colors.red,
-                ),
-              ),
-              Text(
-                DateFormat('dd/MM/yyyy').format(transaction.transactionDate),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
-          onTap: () async {
-            // Vérifier la permission avant d'ouvrir le formulaire d'édition
-            final hasPermission = await _roleService.hasPermission('update_transaction', projectId: transaction.projectId);
-            if (!hasPermission) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Vous n\'avez pas la permission de modifier cette transaction'),
-                    backgroundColor: Colors.red,
+          trailing: SizedBox(
+            width: 100, // Largeur fixe pour avoir assez d'espace
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Montant avec une largeur contrainte
+                Expanded(
+                  child: Text(
+                    '${transaction.isIncome ? '+' : '-'}${NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(transaction.absoluteAmount)}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: transaction.isIncome ? Colors.green : Colors.red,
+                      fontSize: 14, // Légèrement plus petit
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                );
-              }
-              return;
-            }
-            
-            // Afficher le formulaire d'édition de la transaction
-            final result = await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => TransactionFormScreen(
-                  transaction: transaction,
                 ),
-              ),
+                // Actions regroupées dans une colonne plus compacte
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Bouton modifier avec taille réduite
+                    PermissionGated(
+                      permissionName: 'update_transaction',
+                      projectId: transaction.projectId,
+                      child: SizedBox(
+                        height: 20,
+                        width: 24,
+                        child: IconButton(
+                          iconSize: 16,
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(Icons.edit),
+                          onPressed: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => TransactionFormScreen(
+                                  transaction: transaction,
+                                ),
+                              ),
+                            );
+                            
+                            if (result != null) {
+                              _loadData();
+                            }
+                          },
+                          tooltip: 'Modifier',
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 4), // Petit espacement
+                    // Bouton supprimer avec taille réduite
+                    PermissionGated(
+                      permissionName: 'delete_transaction',
+                      projectId: transaction.projectId,
+                      child: SizedBox(
+                        height: 20,
+                        width: 24,
+                        child: IconButton(
+                          iconSize: 16,
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Confirmation'),
+                                content: const Text('Êtes-vous sûr de vouloir supprimer cette transaction ?'),
+                                actions: [
+                                  TextButton(
+                                    child: const Text('Annuler'),
+                                    onPressed: () => Navigator.pop(context),
+                                  ),
+                                  TextButton(
+                                    child: const Text('Supprimer'),
+                                    onPressed: () async {
+                                      Navigator.pop(context);
+                                      try {
+                                        await _projectFinanceService.deleteTransaction(transaction.id);
+                                        _loadData();
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Transaction supprimée avec succès'),
+                                              backgroundColor: Colors.green,
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Erreur lors de la suppression: $e'),
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          tooltip: 'Supprimer',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Remplacer onTap par un gestionnaire qui vérifie d'abord les permissions
+          onTap: () async {
+            final hasPermission = await _roleService.hasPermission(
+              'update_transaction',
+              projectId: transaction.projectId,
             );
             
-            if (result != null) {
-              _loadData();
+            if (hasPermission) {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => TransactionFormScreen(
+                    transaction: transaction,
+                  ),
+                ),
+              );
+              
+              if (result != null) {
+                _loadData();
+              }
             }
           },
         );
@@ -1369,38 +1456,44 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                 final projectBalance = projectIncome - projectExpenses;
                 final NumberFormat currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
                 
+                // Déterminer si le projet est en alerte (solde négatif)
+                final bool isInAlert = projectBalance < 0;
+                
                 return Card(
                   margin: const EdgeInsets.only(bottom: 16),
                   elevation: 3,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: Colors.red.shade300, width: 1.5),
+                    side: isInAlert
+                        ? BorderSide(color: Colors.red.shade300, width: 1.5)
+                        : BorderSide.none,
                   ),
                   child: Column(
                     children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Alerte: Solde négatif',
-                              style: TextStyle(
-                                color: Colors.red.shade700,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
+                      if (isInAlert)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Alerte: Solde négatif',
+                                style: TextStyle(
+                                  color: Colors.red.shade700,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
                       Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(
@@ -1697,6 +1790,14 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   Widget _buildTransactionsList(List<ProjectTransaction> transactions) {
     final NumberFormat currencyFormat = NumberFormat.currency(locale: 'fr_FR', symbol: '€');
     
+    // Obtenir la largeur de l'écran pour calculer les tailles responsive
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    // Calculer les tailles de texte en fonction de la largeur d'écran
+    final double fontSizeAmount = screenWidth < 360 ? 12 : (screenWidth < 400 ? 13 : 14);
+    final double iconSize = screenWidth < 360 ? 14 : 16;
+    final double widthTrailing = screenWidth < 360 ? 85 : (screenWidth < 400 ? 95 : 100);
+    
     return RefreshIndicator(
       onRefresh: () async {
         await _loadData();
@@ -1712,7 +1813,10 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
             margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
             elevation: 1,
             child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: screenWidth < 360 ? 8 : 16, 
+                vertical: screenWidth < 360 ? 4 : 8
+              ),
               leading: CircleAvatar(
                 backgroundColor: transaction.isIncome ? Colors.green[100] : Colors.red[100],
                 child: Icon(
@@ -1722,9 +1826,12 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
               ),
               title: Text(
                 transaction.description.isNotEmpty ? transaction.description : 'Transaction sans description',
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w500,
+                  fontSize: screenWidth < 360 ? 13 : 14,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1732,129 +1839,164 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(Icons.category, size: 12, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
-                      Text(
-                        transaction.category,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
+                      Icon(Icons.category, size: screenWidth < 360 ? 10 : 12, color: Colors.grey[600]),
+                      SizedBox(width: screenWidth < 360 ? 2 : 4),
+                      Expanded(
+                        child: Text(
+                          transaction.category,
+                          style: TextStyle(
+                            fontSize: screenWidth < 360 ? 10 : 12,
+                            color: Colors.grey[600],
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Icon(Icons.calendar_today, size: 12, color: Colors.grey[600]),
-                      const SizedBox(width: 4),
+                      SizedBox(width: screenWidth < 360 ? 6 : 12),
+                      Icon(Icons.calendar_today, size: screenWidth < 360 ? 10 : 12, color: Colors.grey[600]),
+                      SizedBox(width: screenWidth < 360 ? 2 : 4),
                       Text(
                         DateFormat('dd/MM/yyyy').format(transaction.transactionDate),
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: screenWidth < 360 ? 10 : 12,
                           color: Colors.grey[600],
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  if (transaction.projectName.isNotEmpty)
+                    SizedBox(height: screenWidth < 360 ? 2 : 4),
                   if (transaction.projectName.isNotEmpty)
                     Row(
                       children: [
-                        Icon(Icons.group_work, size: 12, color: Colors.grey[600]),
-                        const SizedBox(width: 4),
-                        Text(
-                          transaction.projectName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
+                        Icon(Icons.group_work, size: screenWidth < 360 ? 10 : 12, color: Colors.grey[600]),
+                        SizedBox(width: screenWidth < 360 ? 2 : 4),
+                        Expanded(
+                          child: Text(
+                            transaction.projectName,
+                            style: TextStyle(
+                              fontSize: screenWidth < 360 ? 10 : 12,
+                              color: Colors.grey[600],
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
                     ),
                 ],
               ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${transaction.isIncome ? '+' : '-'}${currencyFormat.format(transaction.absoluteAmount)}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: transaction.isIncome ? Colors.green : Colors.red,
-                      fontSize: 16,
+              trailing: SizedBox(
+                width: widthTrailing, // Largeur adaptative
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Montant avec une largeur contrainte
+                    Expanded(
+                      child: Text(
+                        '${transaction.isIncome ? '+' : '-'}${currencyFormat.format(transaction.absoluteAmount)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: transaction.isIncome ? Colors.green : Colors.red,
+                          fontSize: fontSizeAmount, // Taille de police adaptative
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  PermissionGated(
-                    permissionName: 'update_transaction',
-                    projectId: transaction.projectId,
-                    child: IconButton(
-                      icon: const Icon(Icons.edit, size: 18),
-                      onPressed: () async {
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => TransactionFormScreen(
-                              transaction: transaction,
+                    // Actions regroupées dans une colonne plus compacte
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Bouton modifier avec taille réduite
+                        PermissionGated(
+                          permissionName: 'update_transaction',
+                          projectId: transaction.projectId,
+                          child: SizedBox(
+                            height: 20,
+                            width: 24,
+                            child: IconButton(
+                              iconSize: iconSize, // Taille d'icône adaptative
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(Icons.edit),
+                              onPressed: () async {
+                                final result = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => TransactionFormScreen(
+                                      transaction: transaction,
+                                    ),
+                                  ),
+                                );
+                                
+                                if (result != null) {
+                                  _loadData();
+                                }
+                              },
+                              tooltip: 'Modifier',
                             ),
                           ),
-                        );
-                        
-                        if (result != null) {
-                          _loadData();
-                        }
-                      },
-                      tooltip: 'Modifier',
-                    ),
-                  ),
-                  PermissionGated(
-                    permissionName: 'delete_transaction',
-                    projectId: transaction.projectId,
-                    child: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 18),
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Confirmation'),
-                            content: const Text('Êtes-vous sûr de vouloir supprimer cette transaction ?'),
-                            actions: [
-                              TextButton(
-                                child: const Text('Annuler'),
-                                onPressed: () => Navigator.pop(context),
-                              ),
-                              TextButton(
-                                child: const Text('Supprimer'),
-                                onPressed: () async {
-                                  Navigator.pop(context);
-                                  try {
-                                    await _projectFinanceService.deleteTransaction(transaction.id);
-                                    _loadData();
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Transaction supprimée avec succès'),
-                                          backgroundColor: Colors.green,
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Erreur lors de la suppression: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
-                              ),
-                            ],
+                        ),
+                        SizedBox(height: 4), // Petit espacement
+                        // Bouton supprimer avec taille réduite
+                        PermissionGated(
+                          permissionName: 'delete_transaction',
+                          projectId: transaction.projectId,
+                          child: SizedBox(
+                            height: 20,
+                            width: 24,
+                            child: IconButton(
+                              iconSize: iconSize, // Taille d'icône adaptative
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Confirmation'),
+                                    content: const Text('Êtes-vous sûr de vouloir supprimer cette transaction ?'),
+                                    actions: [
+                                      TextButton(
+                                        child: const Text('Annuler'),
+                                        onPressed: () => Navigator.pop(context),
+                                      ),
+                                      TextButton(
+                                        child: const Text('Supprimer'),
+                                        onPressed: () async {
+                                          Navigator.pop(context);
+                                          try {
+                                            await _projectFinanceService.deleteTransaction(transaction.id);
+                                            _loadData();
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('Transaction supprimée avec succès'),
+                                                  backgroundColor: Colors.green,
+                                                ),
+                                              );
+                                            }
+                                          } catch (e) {
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('Erreur lors de la suppression: $e'),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              tooltip: 'Supprimer',
+                            ),
                           ),
-                        );
-                      },
-                      tooltip: 'Supprimer',
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               // Remplacer onTap par un gestionnaire qui vérifie d'abord les permissions
               onTap: () async {
