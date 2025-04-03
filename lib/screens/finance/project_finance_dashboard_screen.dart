@@ -207,6 +207,16 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   double _totalRevenues = 0;
   double _totalExpenses = 0;
   double _totalBalance = 0;
+  
+  // Variables pour le drill-down des graphiques
+  String? _selectedExpenseCategory;
+  String? _selectedRevenueCategory;
+  bool _showExpenseSubcategories = false;
+  bool _showRevenueSubcategories = false;
+  
+  // Contrôleurs pour gérer les états locaux des graphiques sans rebuild complet
+  final ValueNotifier<String?> _selectedExpenseCategoryNotifier = ValueNotifier<String?>(null);
+  final ValueNotifier<String?> _selectedRevenueCategoryNotifier = ValueNotifier<String?>(null);
 
   @override
   void initState() {
@@ -230,7 +240,10 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
   
   @override
   void dispose() {
+    // Libération des ressources
     _tabController.dispose();
+    _selectedExpenseCategoryNotifier.dispose();
+    _selectedRevenueCategoryNotifier.dispose();
     super.dispose();
   }
 
@@ -715,27 +728,14 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Répartition des dépenses',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildExpensesChart(),
-                      ],
-                    ),
+                    child: _buildExpensesChart(),
                   ),
                 ),
               ),
               
               const SizedBox(height: 24),
               
-              // Graphique de répartition des entrées
+              // Graphique de répartition des revenus
               PermissionGated(
                 permissionName: 'read_transaction',
                 projectId: _selectedProjectId,
@@ -744,20 +744,7 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Répartition des entrées',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildIncomesChart(),
-                      ],
-                    ),
+                    child: _buildIncomesChart(),
                   ),
                 ),
               ),
@@ -813,179 +800,530 @@ class _ProjectFinanceDashboardScreenState extends State<ProjectFinanceDashboardS
     );
   }
   
-  // Méthode pour construire le graphique des dépenses
+  // La méthode dispose a été déplacée plus haut
+  
+  // Méthode pour construire le graphique des dépenses avec gestion optimisée de l'état
   Widget _buildExpensesChart() {
-    // Grouper les dépenses par catégorie
-    final Map<String, double> expensesByCategory = {};
-    
-    for (final transaction in _projectTransactions) {
-      if (!transaction.isIncome) {
-        final category = transaction.category;
-        if (expensesByCategory.containsKey(category)) {
-          expensesByCategory[category] = expensesByCategory[category]! + transaction.absoluteAmount;
-        } else {
-          expensesByCategory[category] = transaction.absoluteAmount;
+    return StatefulBuilder(
+      builder: (BuildContext context, StateSetter setLocalState) {
+        // Titre différent selon le mode
+        String chartTitle = _showExpenseSubcategories 
+            ? 'Sous-catégories de $_selectedExpenseCategory' 
+            : 'Répartition des dépenses';
+        
+        // Grouper les dépenses selon le mode actuel
+        final Map<String, double> expensesByCategory = {};
+        
+        for (final transaction in _projectTransactions) {
+          if (!transaction.isIncome) {
+            // En mode sous-catégories, on filtre par catégorie principale
+            if (_showExpenseSubcategories) {
+              if (transaction.category == _selectedExpenseCategory && transaction.subcategory != null) {
+                final subcategory = transaction.subcategory!;
+                if (expensesByCategory.containsKey(subcategory)) {
+                  expensesByCategory[subcategory] = expensesByCategory[subcategory]! + transaction.absoluteAmount;
+                } else {
+                  expensesByCategory[subcategory] = transaction.absoluteAmount;
+                }
+              }
+            } else {
+              // Mode normal: grouper par catégorie principale
+              final category = transaction.category;
+              if (expensesByCategory.containsKey(category)) {
+                expensesByCategory[category] = expensesByCategory[category]! + transaction.absoluteAmount;
+              } else {
+                expensesByCategory[category] = transaction.absoluteAmount;
+              }
+            }
+          }
         }
-      }
-    }
-    
-    // Couleurs pour le graphique
-    final List<Color> colors = [
-      Colors.blue,
-      Colors.red,
-      Colors.green,
-      Colors.purple,
-      Colors.orange,
-      Colors.teal,
-      Colors.pink,
-      Colors.amber,
-      Colors.indigo,
-      Colors.brown,
-    ];
-    
-    if (expensesByCategory.isEmpty) {
-      return const Center(
-        child: Text('Aucune dépense pour la période sélectionnée'),
-      );
-    }
-    
-    // Convertir en données pour le graphique
-    final List<ChartData> chartData = [];
-    
-    int colorIndex = 0;
-    expensesByCategory.forEach((category, amount) {
-      final percentage = (amount / _totalExpenses) * 100;
-      final chartDataItem = ChartData(
-        category,
-        amount,
-        colors[colorIndex % colors.length],
-        percentText: '${percentage.toStringAsFixed(1)}%',
-        amountText: NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(amount),
-      );
-      
-      chartData.add(chartDataItem);
-      
-      colorIndex++;
-    });
-    
-    return SfCircularChart(
-      series: <CircularSeries>[
-        PieSeries(
-          dataSource: chartData,
-          xValueMapper: (data, index) => data.category,
-          yValueMapper: (data, index) => data.amount, 
-          pointColorMapper: (data, index) => data.color,
-          dataLabelMapper: (data, index) => data.percentText,
-          dataLabelSettings: const DataLabelSettings(
-            isVisible: true,
-            labelPosition: ChartDataLabelPosition.outside,
-            connectorLineSettings: ConnectorLineSettings(
-              type: ConnectorType.curve,
-              length: '10%',
+        
+        // Couleurs pour le graphique
+        final List<Color> colors = [
+          Colors.blue,
+          Colors.red,
+          Colors.green,
+          Colors.purple,
+          Colors.orange,
+          Colors.teal,
+          Colors.pink,
+          Colors.amber,
+          Colors.indigo,
+          Colors.brown,
+        ];
+        
+        if (expensesByCategory.isEmpty) {
+          // Message différent selon le mode
+          String emptyMessage = _showExpenseSubcategories
+              ? 'Aucune sous-catégorie pour $_selectedExpenseCategory'
+              : 'Aucune dépense pour la période sélectionnée';
+          
+          return Column(
+            children: [
+              if (_showExpenseSubcategories)
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Retour aux catégories'),
+                    onPressed: () {
+                      print('=== [CHART_DRILL_DOWN] [EXPENSES] Retour aux catégories principales');
+                      setLocalState(() {
+                        _showExpenseSubcategories = false;
+                        _selectedExpenseCategory = null;
+                        _selectedExpenseCategoryNotifier.value = null;
+                      });
+                    },
+                  ),
+                ),
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(emptyMessage),
+                ),
+              ),
+            ],
+          );
+        }
+        
+        // Convertir en données pour le graphique
+        final List<ChartData> chartData = [];
+        
+        // Calculer le montant total pour les pourcentages
+        double totalAmount = expensesByCategory.values.fold(0.0, (sum, amount) => sum + amount);
+        
+        int colorIndex = 0;
+        expensesByCategory.forEach((category, amount) {
+          final percentage = (amount / totalAmount) * 100;
+          final chartDataItem = ChartData(
+            category,
+            amount,
+            colors[colorIndex % colors.length],
+            percentText: '${percentage.toStringAsFixed(1)}%',
+            amountText: NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(amount),
+          );
+          
+          chartData.add(chartDataItem);
+          colorIndex++;
+        });
+        
+        // Trouver l'index de la catégorie sélectionnée pour l'animation d'explosion
+        int explodeIndex = 0; // Par défaut c'est le premier élément
+        if (_selectedExpenseCategory != null && !_showExpenseSubcategories) {
+          final selectedIndex = chartData.indexWhere((data) => data.category == _selectedExpenseCategory);
+          if (selectedIndex >= 0) {
+            explodeIndex = selectedIndex;
+          }
+        }
+        
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LayoutBuilder(builder: (context, constraints) {
+              // Déterminer taille de la police en fonction de la largeur disponible
+              double titleFontSize = constraints.maxWidth < 400 ? 14.0 : 
+                                     constraints.maxWidth < 600 ? 16.0 : 18.0;
+              
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Titre avec largeur limitée et text overflow
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      chartTitle,
+                      style: TextStyle(
+                        fontSize: titleFontSize,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: _showExpenseSubcategories ? 2 : 1,
+                    ),
+                  ),
+                  // Bouton de retour responsif
+                  if (_showExpenseSubcategories) 
+                    Flexible(
+                      flex: 2,
+                      child: constraints.maxWidth < 400 ?
+                        // Version compacte pour petits écrans
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back),
+                          tooltip: 'Retour aux catégories',
+                          onPressed: () {
+                            print('=== [CHART_DRILL_DOWN] [EXPENSES] Retour aux catégories principales via bouton');
+                            setLocalState(() {
+                              _showExpenseSubcategories = false;
+                              _selectedExpenseCategory = null;
+                              _selectedExpenseCategoryNotifier.value = null;
+                            });
+                          },
+                        ) :
+                        // Version complète pour écrans moyens et grands
+                        TextButton.icon(
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('Retour'),
+                          onPressed: () {
+                            print('=== [CHART_DRILL_DOWN] [EXPENSES] Retour aux catégories principales via bouton');
+                            setLocalState(() {
+                              _showExpenseSubcategories = false;
+                              _selectedExpenseCategory = null;
+                              _selectedExpenseCategoryNotifier.value = null;
+                            });
+                          },
+                        ),
+                    ),
+                ],
+              );
+            }),
+            const SizedBox(height: 24),
+            // ValueListenableBuilder pour réagir aux changements de sélection sans recharger tout
+            ValueListenableBuilder<String?>(
+              valueListenable: _selectedExpenseCategoryNotifier,
+              builder: (context, selectedCategory, _) {
+                print('=== [CHART_DRILL_DOWN] [EXPENSES] Construction du graphique: ' + 
+                      'catégorie sélectionnée = ${selectedCategory ?? "aucune"}, ' + 
+                      'mode sous-catégories = $_showExpenseSubcategories');
+                
+                return SfCircularChart(
+                  series: <CircularSeries>[
+                    PieSeries<ChartData, String>(
+                      dataSource: chartData,
+                      xValueMapper: (data, _) => data.category,
+                      yValueMapper: (data, _) => data.amount, 
+                      pointColorMapper: (data, _) => data.color,
+                      dataLabelMapper: (data, _) => data.percentText,
+                      dataLabelSettings: const DataLabelSettings(
+                        isVisible: true,
+                        labelPosition: ChartDataLabelPosition.outside,
+                        connectorLineSettings: ConnectorLineSettings(
+                          type: ConnectorType.curve,
+                          length: '10%',
+                        ),
+                      ),
+                      enableTooltip: true,
+                      animationDuration: 1200,
+                      explode: true,
+                      explodeIndex: explodeIndex,
+                      explodeOffset: '5%',
+                      explodeGesture: ActivationMode.singleTap,
+                      onPointTap: (ChartPointDetails details) {
+                        print('=== [CHART_DRILL_DOWN] [EXPENSES] Tap sur un point du graphique');
+                        
+                        if (details.pointIndex != null && !_showExpenseSubcategories) {
+                          final categoryName = chartData[details.pointIndex!].category;
+                          print('=== [CHART_DRILL_DOWN] [EXPENSES] Catégorie cliquée: $categoryName');
+                          print('=== [CHART_DRILL_DOWN] [EXPENSES] Catégorie déjà sélectionnée: $_selectedExpenseCategory');
+                          
+                          if (categoryName == _selectedExpenseCategory) {
+                            print('=== [CHART_DRILL_DOWN] [EXPENSES] Détecté second clic sur $categoryName');
+                            
+                            // Vérifier si cette catégorie a des sous-catégories
+                            final transactions = _projectTransactions.where(
+                              (t) => !t.isIncome && 
+                                    t.category == categoryName && 
+                                    t.subcategory != null
+                            ).toList();
+                            
+                            print('=== [CHART_DRILL_DOWN] [EXPENSES] Transactions avec sous-catégories: ${transactions.length}');
+                            
+                            if (transactions.isNotEmpty) {
+                              final subcategories = transactions.map((t) => t.subcategory!).toSet().toList();
+                              print('=== [CHART_DRILL_DOWN] [EXPENSES] Sous-catégories: $subcategories');
+                              
+                              setLocalState(() {
+                                print('=== [CHART_DRILL_DOWN] [EXPENSES] Activation des sous-catégories');
+                                _showExpenseSubcategories = true;
+                              });
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Aucune sous-catégorie pour $categoryName'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          } else {
+                            // Premier clic, on marque la catégorie comme sélectionnée
+                            print('=== [CHART_DRILL_DOWN] [EXPENSES] Premier clic sur $categoryName');
+                            setLocalState(() {
+                              _selectedExpenseCategory = categoryName;
+                              _selectedExpenseCategoryNotifier.value = categoryName;
+                            });
+                          }
+                        }
+                      },
+                    ),
+                  ],
+                  legend: Legend(
+                    isVisible: true,
+                    position: LegendPosition.bottom,
+                    overflowMode: LegendItemOverflowMode.wrap,
+                  ),
+                  tooltipBehavior: TooltipBehavior(enable: true),
+                );
+              },
             ),
-          ),
-          enableTooltip: true,
-          animationDuration: 1200,
-          explode: true,
-          explodeIndex: 0,
-          explodeOffset: '5%',
-          explodeGesture: ActivationMode.singleTap,
-        ),
-      ],
-      legend: Legend(
-        isVisible: true,
-        position: LegendPosition.bottom,
-        overflowMode: LegendItemOverflowMode.wrap,
-      ),
-      tooltipBehavior: TooltipBehavior(enable: true),
+          ],
+        );
+      },
     );
   }
   
-  // Méthode pour construire le graphique des entrées
+  // Méthode pour construire le graphique des revenus avec gestion optimisée de l'état
   Widget _buildIncomesChart() {
-    // Grouper les entrées par catégorie
-    final Map<String, double> incomesByCategory = {};
-    
-    for (final transaction in _projectTransactions) {
-      if (transaction.isIncome) {
-        final category = transaction.category;
-        if (incomesByCategory.containsKey(category)) {
-          incomesByCategory[category] = incomesByCategory[category]! + transaction.absoluteAmount;
-        } else {
-          incomesByCategory[category] = transaction.absoluteAmount;
+    return StatefulBuilder(
+      builder: (BuildContext context, StateSetter setLocalState) {
+        String chartTitle = _showRevenueSubcategories
+            ? 'Sous-catégories de $_selectedRevenueCategory'
+            : 'Répartition des revenus';
+        
+        // Grouper les revenus selon le mode actuel
+        final Map<String, double> revenuesByCategory = {};
+        
+        for (final transaction in _projectTransactions) {
+          if (transaction.isIncome) {
+            if (_showRevenueSubcategories) {
+              if (transaction.category == _selectedRevenueCategory && transaction.subcategory != null) {
+                final subcategory = transaction.subcategory!;
+                if (revenuesByCategory.containsKey(subcategory)) {
+                  revenuesByCategory[subcategory] = revenuesByCategory[subcategory]! + transaction.absoluteAmount;
+                } else {
+                  revenuesByCategory[subcategory] = transaction.absoluteAmount;
+                }
+              }
+            } else {
+              final category = transaction.category;
+              if (revenuesByCategory.containsKey(category)) {
+                revenuesByCategory[category] = revenuesByCategory[category]! + transaction.absoluteAmount;
+              } else {
+                revenuesByCategory[category] = transaction.absoluteAmount;
+              }
+            }
+          }
         }
-      }
-    }
-    
-    // Couleurs pour le graphique
-    final List<Color> colors = [
-      Colors.blue,
-      Colors.green,
-      Colors.purple,
-      Colors.orange,
-      Colors.teal,
-      Colors.amber,
-      Colors.pink,
-      Colors.indigo,
-      Colors.red,
-      Colors.brown,
-    ];
-    
-    if (incomesByCategory.isEmpty) {
-      return const Center(
-        child: Text('Aucune entrée pour la période sélectionnée'),
-      );
-    }
-    
-    // Convertir en données pour le graphique
-    final List<ChartData> chartData = [];
-    
-    int colorIndex = 0;
-    incomesByCategory.forEach((category, amount) {
-      final percentage = (amount / _totalRevenues) * 100;
-      final chartDataItem = ChartData(
-        category,
-        amount,
-        colors[colorIndex % colors.length],
-        percentText: '${percentage.toStringAsFixed(1)}%',
-        amountText: NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(amount),
-      );
-      
-      chartData.add(chartDataItem);
-      
-      colorIndex++;
-    });
-    
-    return SfCircularChart(
-      series: <CircularSeries>[
-        PieSeries(
-          dataSource: chartData,
-          xValueMapper: (data, index) => data.category,
-          yValueMapper: (data, index) => data.amount, 
-          pointColorMapper: (data, index) => data.color,
-          dataLabelMapper: (data, index) => data.percentText,
-          dataLabelSettings: const DataLabelSettings(
-            isVisible: true,
-            labelPosition: ChartDataLabelPosition.outside,
-            connectorLineSettings: ConnectorLineSettings(
-              type: ConnectorType.curve,
-              length: '10%',
+        
+        final List<Color> colors = [
+          Colors.green,
+          Colors.blue,
+          Colors.orange,
+          Colors.purple,
+          Colors.teal,
+          Colors.amber,
+          Colors.pink,
+          Colors.indigo,
+          Colors.cyan,
+          Colors.brown,
+        ];
+        
+        if (revenuesByCategory.isEmpty) {
+          String emptyMessage = _showRevenueSubcategories
+              ? 'Aucune sous-catégorie pour $_selectedRevenueCategory'
+              : 'Aucun revenu pour la période sélectionnée';
+          
+          return Column(
+            children: [
+              if (_showRevenueSubcategories)
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Retour aux catégories'),
+                    onPressed: () {
+                      print('=== [CHART_DRILL_DOWN] [REVENUES] Retour aux catégories principales');
+                      setLocalState(() {
+                        _showRevenueSubcategories = false;
+                        _selectedRevenueCategory = null;
+                        _selectedRevenueCategoryNotifier.value = null;
+                      });
+                    },
+                  ),
+                ),
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(emptyMessage),
+                ),
+              ),
+            ],
+          );
+        }
+        
+        final List<ChartData> chartData = [];
+        double totalAmount = revenuesByCategory.values.fold(0.0, (sum, amount) => sum + amount);
+        
+        int colorIndex = 0;
+        revenuesByCategory.forEach((category, amount) {
+          final percentage = (amount / totalAmount) * 100;
+          final chartDataItem = ChartData(
+            category,
+            amount,
+            colors[colorIndex % colors.length],
+            percentText: '${percentage.toStringAsFixed(1)}%',
+            amountText: NumberFormat.currency(locale: 'fr_FR', symbol: '€').format(amount),
+          );
+          
+          chartData.add(chartDataItem);
+          colorIndex++;
+        });
+        
+        // Trouver l'index de la catégorie sélectionnée pour l'animation d'explosion
+        int explodeIndex = 0; // Par défaut c'est le premier élément
+        if (_selectedRevenueCategory != null && !_showRevenueSubcategories) {
+          final selectedIndex = chartData.indexWhere((data) => data.category == _selectedRevenueCategory);
+          if (selectedIndex >= 0) {
+            explodeIndex = selectedIndex;
+          }
+        }
+        
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LayoutBuilder(builder: (context, constraints) {
+              // Déterminer taille de la police en fonction de la largeur disponible
+              double titleFontSize = constraints.maxWidth < 400 ? 14.0 : 
+                                     constraints.maxWidth < 600 ? 16.0 : 18.0;
+              
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Titre avec largeur limitée et text overflow
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      chartTitle,
+                      style: TextStyle(
+                        fontSize: titleFontSize,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: _showRevenueSubcategories ? 2 : 1,
+                    ),
+                  ),
+                  // Bouton de retour responsif
+                  if (_showRevenueSubcategories) 
+                    Flexible(
+                      flex: 2,
+                      child: constraints.maxWidth < 400 ?
+                        // Version compacte pour petits écrans
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back),
+                          tooltip: 'Retour aux catégories',
+                          onPressed: () {
+                            print('=== [CHART_DRILL_DOWN] [REVENUES] Retour aux catégories principales via bouton');
+                            setLocalState(() {
+                              _showRevenueSubcategories = false;
+                              _selectedRevenueCategory = null;
+                              _selectedRevenueCategoryNotifier.value = null;
+                            });
+                          },
+                        ) :
+                        // Version complète pour écrans moyens et grands
+                        TextButton.icon(
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('Retour'),
+                          onPressed: () {
+                            print('=== [CHART_DRILL_DOWN] [REVENUES] Retour aux catégories principales via bouton');
+                            setLocalState(() {
+                              _showRevenueSubcategories = false;
+                              _selectedRevenueCategory = null;
+                              _selectedRevenueCategoryNotifier.value = null;
+                            });
+                          },
+                        ),
+                    ),
+                ],
+              );
+            }),
+            const SizedBox(height: 24),
+            // ValueListenableBuilder pour réagir aux changements de sélection sans recharger tout
+            ValueListenableBuilder<String?>(
+              valueListenable: _selectedRevenueCategoryNotifier,
+              builder: (context, selectedCategory, _) {
+                print('=== [CHART_DRILL_DOWN] [REVENUES] Construction du graphique: ' + 
+                      'catégorie sélectionnée = ${selectedCategory ?? "aucune"}, ' + 
+                      'mode sous-catégories = $_showRevenueSubcategories');
+                
+                return SfCircularChart(
+                  series: <CircularSeries>[
+                    PieSeries<ChartData, String>(
+                      dataSource: chartData,
+                      xValueMapper: (data, _) => data.category,
+                      yValueMapper: (data, _) => data.amount, 
+                      pointColorMapper: (data, _) => data.color,
+                      dataLabelMapper: (data, _) => data.percentText,
+                      dataLabelSettings: const DataLabelSettings(
+                        isVisible: true,
+                        labelPosition: ChartDataLabelPosition.outside,
+                        connectorLineSettings: ConnectorLineSettings(
+                          type: ConnectorType.curve,
+                          length: '10%',
+                        ),
+                      ),
+                      enableTooltip: true,
+                      animationDuration: 1200,
+                      explode: true,
+                      explodeIndex: explodeIndex,
+                      explodeOffset: '5%',
+                      explodeGesture: ActivationMode.singleTap,
+                      onPointTap: (ChartPointDetails details) {
+                        print('=== [CHART_DRILL_DOWN] [REVENUES] Tap sur un point du graphique');
+                        
+                        if (details.pointIndex != null && !_showRevenueSubcategories) {
+                          final categoryName = chartData[details.pointIndex!].category;
+                          print('=== [CHART_DRILL_DOWN] [REVENUES] Catégorie cliquée: $categoryName');
+                          print('=== [CHART_DRILL_DOWN] [REVENUES] Catégorie déjà sélectionnée: $_selectedRevenueCategory');
+                          
+                          if (categoryName == _selectedRevenueCategory) {
+                            print('=== [CHART_DRILL_DOWN] [REVENUES] Détecté second clic sur $categoryName');
+                            
+                            final transactions = _projectTransactions.where(
+                              (t) => t.isIncome && 
+                                    t.category == categoryName && 
+                                    t.subcategory != null
+                            ).toList();
+                            
+                            print('=== [CHART_DRILL_DOWN] [REVENUES] Transactions avec sous-catégories: ${transactions.length}');
+                            
+                            if (transactions.isNotEmpty) {
+                              final subcategories = transactions.map((t) => t.subcategory!).toSet().toList();
+                              print('=== [CHART_DRILL_DOWN] [REVENUES] Sous-catégories: $subcategories');
+                              
+                              setLocalState(() {
+                                print('=== [CHART_DRILL_DOWN] [REVENUES] Activation des sous-catégories');
+                                _showRevenueSubcategories = true;
+                              });
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Aucune sous-catégorie pour $categoryName'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          } else {
+                            // Premier clic, on marque la catégorie comme sélectionnée
+                            print('=== [CHART_DRILL_DOWN] [REVENUES] Premier clic sur $categoryName');
+                            setLocalState(() {
+                              _selectedRevenueCategory = categoryName;
+                              _selectedRevenueCategoryNotifier.value = categoryName;
+                            });
+                          }
+                        }
+                      },
+                    ),
+                  ],
+                  legend: Legend(
+                    isVisible: true,
+                    position: LegendPosition.bottom,
+                    overflowMode: LegendItemOverflowMode.wrap,
+                  ),
+                  tooltipBehavior: TooltipBehavior(enable: true),
+                );
+              },
             ),
-          ),
-          enableTooltip: true,
-          animationDuration: 1200,
-          explode: true,
-          explodeIndex: 0,
-          explodeOffset: '5%',
-          explodeGesture: ActivationMode.singleTap,
-        ),
-      ],
-      legend: Legend(
-        isVisible: true,
-        position: LegendPosition.bottom,
-        overflowMode: LegendItemOverflowMode.wrap,
-      ),
-      tooltipBehavior: TooltipBehavior(enable: true),
+          ],
+        );
+      },
     );
   }
   
