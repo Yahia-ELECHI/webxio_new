@@ -76,7 +76,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   Future<void> _loadProjectTeams() async {
     try {
       if (widget.project != null) {
-        final projectTeams = await _teamService.getTeamProjects(widget.project!.id);
+        final projectTeams = await _teamService.getTeamsByProject(widget.project!.id);
         setState(() {
           _selectedTeamIds = projectTeams.map((team) => team.id).toList();
         });
