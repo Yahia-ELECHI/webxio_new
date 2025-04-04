@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/team_model.dart';
 import '../../services/team_service/team_service.dart';
+import '../../services/role_service.dart';
 import '../../widgets/islamic_patterns.dart';
 import 'team_detail_screen.dart';
 import '../../config/supabase_config.dart';
@@ -17,9 +18,61 @@ class _CreateTeamScreenState extends State<CreateTeamScreen> {
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final TeamService _teamService = TeamService();
+  final RoleService _roleService = RoleService();
   
   bool _isLoading = false;
   String? _errorMessage;
+  bool _hasCreatePermission = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissions();
+    
+    // Tracer les informations RBAC
+    _logUserAccessInfo();
+  }
+
+  Future<void> _checkPermissions() async {
+    try {
+      final hasPermission = await _roleService.hasPermission('create_team');
+      setState(() {
+        _hasCreatePermission = hasPermission;
+      });
+      
+      if (!hasPermission) {
+        setState(() {
+          _errorMessage = 'Vous n\'avez pas la permission de créer une équipe';
+        });
+      }
+    } catch (e) {
+      print('Erreur lors de la vérification des permissions: $e');
+    }
+  }
+  
+  /// Journalise les informations détaillées sur l'utilisateur pour le débogage RBAC
+  Future<void> _logUserAccessInfo() async {
+    try {
+      final user = SupabaseConfig.client.auth.currentUser;
+      if (user == null) {
+        print('ERREUR: CreateTeamScreen - Aucun utilisateur connecté');
+        return;
+      }
+      
+      print('\n===== INFORMATIONS D\'ACCÈS UTILISATEUR (CreateTeamScreen) =====');
+      print('ID utilisateur: ${user.id}');
+      print('Email: ${user.email}');
+      
+      // Vérifier spécifiquement la permission pour créer une équipe
+      final hasCreateTeam = await _roleService.hasPermission('create_team');
+      
+      print('\nPermission "create_team" (création équipe): ${hasCreateTeam ? 'ACCORDÉE' : 'REFUSÉE'}');
+      
+      print('============================================================\n');
+    } catch (e) {
+      print('ERREUR lors de la récupération des informations d\'accès: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -29,6 +82,13 @@ class _CreateTeamScreenState extends State<CreateTeamScreen> {
   }
 
   Future<void> _createTeam() async {
+    if (!_hasCreatePermission) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vous n\'avez pas la permission de créer une équipe')),
+      );
+      return;
+    }
+    
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -161,6 +221,7 @@ class _CreateTeamScreenState extends State<CreateTeamScreen> {
               // Nom de l'équipe
               TextFormField(
                 controller: _nameController,
+                enabled: _hasCreatePermission,
                 decoration: const InputDecoration(
                   labelText: 'Nom de l\'équipe',
                   hintText: 'Ex: Équipe Marketing',
@@ -181,6 +242,7 @@ class _CreateTeamScreenState extends State<CreateTeamScreen> {
               // Description de l'équipe
               TextFormField(
                 controller: _descriptionController,
+                enabled: _hasCreatePermission,
                 decoration: const InputDecoration(
                   labelText: 'Description (optionnelle)',
                   hintText: 'Ex: Équipe responsable des campagnes marketing',
@@ -194,7 +256,7 @@ class _CreateTeamScreenState extends State<CreateTeamScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _createTeam,
+                  onPressed: (_isLoading || !_hasCreatePermission) ? null : _createTeam,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
@@ -204,7 +266,7 @@ class _CreateTeamScreenState extends State<CreateTeamScreen> {
                           width: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : const Text('Créer l\'équipe'),

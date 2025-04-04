@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/task_model.dart';
 import '../../models/project_model.dart';
 import '../../models/phase_model.dart';
@@ -13,7 +14,10 @@ import '../../services/budget_service.dart';
 import '../../services/user_service.dart';
 import '../../services/project_finance_service.dart';
 import '../../services/cache_service.dart';
+import '../../services/role_service.dart';
+import '../../providers/role_provider.dart';
 import '../../main.dart'; // Import pour utiliser MainAppScreen
+import '../../widgets/permission_gated.dart'; // Import pour PermissionGated
 import 'models/dashboard_chart_models.dart';
 import 'sections/tasks_projects_section.dart';
 import 'sections/phases_section.dart';
@@ -37,13 +41,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final UserService _userService = UserService();
   final ProjectFinanceService _projectFinanceService = ProjectFinanceService();
   final CacheService _cacheService = CacheService();
+  final RoleService _roleService = RoleService();
 
-  bool _isLoading = true;
+  bool _isLoading = false;
+  bool _dataLoaded = false;
+  bool _showAllProjects = true; // Afficher tous les projets par défaut
+  String? _selectedProjectId;
+
+  // Flag pour éviter les setState inutiles
+  bool _stateUpdatePending = false;
 
   // Sélection par projet
-  String? _selectedProjectId;
-  bool _showAllProjects = true; // Afficher tous les projets par défaut
-
   // Obtenir le nom du projet sélectionné
   String get _selectedProjectName {
     if (_selectedProjectId == null || _projectsList.isEmpty) {
@@ -75,6 +83,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<TaskHistory> _taskHistoryList = [];
   Map<String, String> _userDisplayNames = {};
   Map<String, Task> _tasksMap = {};
+  
+  // Cache pour les vérifications de permissions RBAC
+  final Map<String, Future<bool>> _permissionCache = {};
+  
+  // Référence au dernier RoleProvider pour vérifier s'il a changé
+  RoleProvider? _lastRoleProvider;
 
   // Données pour les graphiques
   List<TaskDistributionData> _tasksByStatusData = [];
@@ -88,13 +102,89 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    print('DASHBOARD TRACKING: initState() appelé');
+    
+    // Précharger les vérifications de permissions pour améliorer les performances
+    // Cet appel est asynchrone mais on ne l'attend pas pour ne pas bloquer l'UI
+    _preloadPermissions();
+    
     _loadDashboardData();
+  }
+  
+  // Précharge toutes les permissions utilisées dans le dashboard pour optimiser les performances
+  Future<void> _preloadPermissions() async {
+    print('DASHBOARD TRACKING: Préchargement des permissions RBAC');
+    
+    try {
+      // Vérifier d'abord si l'utilisateur a le rôle "observer" (une seule fois)
+      final userRoles = await _roleService.getUserRolesWithoutParam();
+      final isObserver = userRoles.contains('observer');
+      
+      if (isObserver) {
+        // Si l'utilisateur est observateur, on accorde toutes les permissions
+        print('DASHBOARD TRACKING: Utilisateur avec rôle observer, accès accordé à tout');
+        _permissionCache['read_task'] = Future.value(true);
+        _permissionCache['read_phase'] = Future.value(true);
+        _permissionCache['read_transaction'] = Future.value(true);
+      } else {
+        // Sinon, vérifier chaque permission individuellement
+        print('DASHBOARD TRACKING: Vérification des permissions individuelles');
+        final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+        
+        // Vérifier toutes les permissions en parallèle pour accélérer le chargement
+        final results = await Future.wait([
+          roleProvider.hasPermission('read_task'),
+          roleProvider.hasPermission('read_phase'),
+          roleProvider.hasPermission('read_transaction'),
+        ]);
+        
+        // Mettre en cache les résultats
+        _permissionCache['read_task'] = Future.value(results[0]);
+        _permissionCache['read_phase'] = Future.value(results[1]);
+        _permissionCache['read_transaction'] = Future.value(results[2]);
+      }
+    } catch (e) {
+      print('DASHBOARD TRACKING: Erreur lors du préchargement des permissions: $e');
+      // En cas d'erreur, les méthodes individuelles se chargeront de vérifier
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    print('DASHBOARD TRACKING: didChangeDependencies() appelé');
+    
+    // Invalider le cache des permissions uniquement si le Provider a été modifié
+    final currentRoleProvider = Provider.of<RoleProvider>(context, listen: false);
+    if (currentRoleProvider != _lastRoleProvider) {
+      print('DASHBOARD TRACKING: RoleProvider changé, rechargement des permissions');
+      _permissionCache.clear();
+      _preloadPermissions();
+      _lastRoleProvider = currentRoleProvider;
+    }
+  }
+
+  @override
+  void didUpdateWidget(DashboardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    print('DASHBOARD TRACKING: didUpdateWidget() appelé');
   }
 
   Future<void> _loadDashboardData() async {
-    setState(() {
-      _isLoading = true;
-    });
+    print('DASHBOARD TRACKING: _loadDashboardData() - Début chargement');
+    
+    // Flag GLOBAL pour suivre si une mise à jour d'état est prévue
+    _stateUpdatePending = true;
+    print('DASHBOARD TRACKING: _stateUpdatePending = true (pour assurer une actualisation unique)');
+    
+    // Variables pour les données chargées
+    List<Project> newProjects = [];
+    List<Task> newTasks = [];
+    List<Phase> newPhases = [];
+    List<ProjectTransaction> newTransactions = []; 
+    
+    // Afficher uniquement l'indicateur de chargement - pas de setState ici
+    _isLoading = true;
 
     try {
       // 1. Vérifier si des données complètes sont disponibles dans le cache
@@ -108,31 +198,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
           cachedTasks != null && cachedTasks.isNotEmpty &&
           cachedPhases != null && cachedPhases.isNotEmpty) {
 
-        // Afficher immédiatement les données du cache
-        setState(() {
-          _projectsList = cachedProjects.map((json) => Project.fromJson(json)).toList();
-          _tasksList = cachedTasks.map((json) => Task.fromJson(json)).toList();
-          _phasesList = cachedPhases.map((json) => Phase.fromJson(json)).toList();
-
-          if (cachedTransactions != null && cachedTransactions.isNotEmpty) {
-            _projectTransactionsList = cachedTransactions.map((json) => ProjectTransaction.fromJson(json)).toList();
-          }
-
-          // Créer mapping des tâches
-          _tasksMap = {for (var task in _tasksList) task.id: task};
-
-          // Mise à jour des graphiques avec les données disponibles
-          _isLoading = false; // Marquer comme chargé avant de préparer les graphiques (pour afficher l'UI)
+        // Préparer les données du cache sans setState du tout
+        newProjects = cachedProjects.map((json) => Project.fromJson(json)).toList();
+        newTasks = cachedTasks.map((json) => Task.fromJson(json)).toList();
+        newPhases = cachedPhases.map((json) => Phase.fromJson(json)).toList();
+        
+        if (cachedTransactions != null && cachedTransactions.isNotEmpty) {
+          newTransactions = cachedTransactions.map((json) => ProjectTransaction.fromJson(json)).toList();
+        }
+        
+        // Filtrer les données par projets accessibles
+        final Set<String> accessibleProjectIds = newProjects.map((p) => p.id).toSet();
+        newTasks = newTasks.where((task) => accessibleProjectIds.contains(task.projectId)).toList();
+        newPhases = newPhases.where((phase) => accessibleProjectIds.contains(phase.projectId)).toList();
+        newTransactions = newTransactions.where((tx) => accessibleProjectIds.contains(tx.projectId)).toList();
+        
+        // Mise à jour des données sans setState - nous ferons un seul setState à la fin
+        _projectsList = newProjects;
+        _tasksList = newTasks;
+        _phasesList = newPhases;
+        _projectTransactionsList = newTransactions;
+        
+        // Créer mapping des tâches
+        _tasksMap = {for (var task in _tasksList) task.id: task};
           
-          // Lancer la préparation des graphiques de manière asynchrone
-          _prepareAllChartData().then((_) {
-            // Rafraîchir l'UI quand les données du budget planifié sont prêtes
-            if (mounted) setState(() {});
-          });
-        });
+        // Masquer l'indicateur de chargement
+        _isLoading = false;
+        
+        print('DASHBOARD TRACKING: Données du cache chargées, préparation des graphiques SANS setState');
+
+        // Préparer les graphiques sans setState
+        await _prepareAllChartData(suppressSetState: true);
+        print('DASHBOARD TRACKING: Graphiques préparés avec données cache');
 
         // 2. Continuer le chargement en arrière-plan (sans bloquer l'UI)
-        _loadFullDataInBackground();
+        print('DASHBOARD TRACKING: Démarrage chargement en arrière-plan');
+        await _loadFullDataInBackground(suppressFinalSetState: true);
+        
+        // UNIQUE setState à la fin du chargement complet
+        if (mounted) {
+          setState(() {
+            // Cette actualisation unique réaffichera l'UI avec toutes les données chargées
+            _stateUpdatePending = false;
+          });
+          print('DASHBOARD TRACKING: UNIQUE ACTUALISATION après chargement complet');
+        }
         return;
       }
 
@@ -141,23 +251,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     } catch (e) {
       print('Erreur lors du chargement des données: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur lors du chargement des données: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors du chargement des données: $e')),
+        );
+        
+        // Si erreur, il faut faire un setState sinon l'UI ne se mettra jamais à jour
+        setState(() {
+          _isLoading = false;
+          _stateUpdatePending = false;
+        });
+        print('DASHBOARD TRACKING: setState() - Après erreur');
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      // Dans tous les cas, on s'assure que _isLoading est false
+      _isLoading = false;
+      
+      // Si le flag _stateUpdatePending est toujours true, c'est qu'aucun setState n'a été fait
+      // Donc on fait un setState unique ici
+      if (mounted && _stateUpdatePending) {
+        setState(() {
+          _stateUpdatePending = false;
+        });
+        print('DASHBOARD TRACKING: ACTUALISATION UNIQUE dans finally');
+      }
     }
   }
 
   // Chargement complet des données (bloquant l'UI jusqu'à ce que tout soit chargé)
-  Future<void> _loadFullData() async {
+  // Option pour supprimer le setState final pour une actualisation unique
+  Future<void> _loadFullData({bool suppressFinalSetState = false}) async {
     try {
+      print('DASHBOARD TRACKING: _loadFullData() - Chargement complet des données');
+      
       // Chargement parallèle des données avec Future.wait pour optimiser le temps de chargement
-      // (tous les appels API sont lancés en même temps)
       final results = await Future.wait([
-        _projectService.getAllProjects(),
+        _projectService.getAccessibleProjects(), // Utiliser getAccessibleProjects() pour respecter RBAC
         _taskService.getAllTasks(),
         _phaseService.getAllPhases(),
         _projectFinanceService.getAllProjectTransactions(),
@@ -166,51 +295,96 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ]);
 
       // Récupération des résultats avec cast explicite
-      _projectsList = results[0] as List<Project>;
-      _tasksList = results[1] as List<Task>;
-      _phasesList = results[2] as List<Phase>;
-      _projectTransactionsList = results[3] as List<ProjectTransaction>;
-      _budgetsList = results[4] as List<Budget>;
-      _budgetTransactionsList = results[5] as List<BudgetTransaction>;
+      final newProjects = results[0] as List<Project>;
+      final newTasks = results[1] as List<Task>;
+      final newPhases = results[2] as List<Phase>;
+      final newTransactions = results[3] as List<ProjectTransaction>;
+      final newBudgets = results[4] as List<Budget>;
+      final newBudgetTransactions = results[5] as List<BudgetTransaction>;
 
-      // Créer un mapping des tâches
+      // Filtrer les données par projets accessibles
+      final Set<String> accessibleProjectIds = newProjects.map((p) => p.id).toSet();
+      final filteredTasks = newTasks.where((task) => accessibleProjectIds.contains(task.projectId)).toList();
+      final filteredPhases = newPhases.where((phase) => accessibleProjectIds.contains(phase.projectId)).toList();
+      final filteredTransactions = newTransactions.where((tx) => accessibleProjectIds.contains(tx.projectId)).toList();
+
+      // Mise à jour des données d'état (sans setState)
+      _projectsList = newProjects;
+      _tasksList = filteredTasks;
+      _phasesList = filteredPhases;
+      _projectTransactionsList = filteredTransactions;
+      _budgetsList = newBudgets;
+      _budgetTransactionsList = newBudgetTransactions;
+
+      // Créer mapping des tâches
       _tasksMap = {for (var task in _tasksList) task.id: task};
-
+      
       // Charger l'historique des tâches récentes (limité à 50)
       await _loadTaskHistory();
 
       // Mettre en cache pour la prochaine visite
-      if (_projectsList.isNotEmpty) {
-        _cacheService.cacheProjects(_projectsList.map((p) => p.toJson()).toList());
+      if (newProjects.isNotEmpty) {
+        _cacheService.cacheProjects(newProjects.map((p) => p.toJson()).toList());
       }
-
-      if (_tasksList.isNotEmpty) {
-        _cacheService.cacheTasks(null, _tasksList.map((t) => t.toJson()).toList());
+      if (filteredTasks.isNotEmpty) {
+        _cacheService.cacheTasks(null, filteredTasks.map((t) => t.toJson()).toList());
       }
-
-      if (_phasesList.isNotEmpty) {
-        _cacheService.cachePhases(null, _phasesList.map((p) => p.toJson()).toList());
+      if (filteredPhases.isNotEmpty) {
+        _cacheService.cachePhases(null, filteredPhases.map((p) => p.toJson()).toList());
       }
-
-      if (_projectTransactionsList.isNotEmpty) {
-        _cacheService.cacheTransactions(null, _projectTransactionsList.map((t) => t.toJson()).toList());
+      if (filteredTransactions.isNotEmpty) {
+        _cacheService.cacheTransactions(null, filteredTransactions.map((t) => t.toJson()).toList());
       }
 
       // Préparation des données pour les charts et widgets
-      await _prepareAllChartData();
+      await _prepareAllChartData(suppressSetState: suppressFinalSetState);
+      
+      // Si on ne supprime pas le setState final, on met à jour l'UI
+      if (!suppressFinalSetState && mounted) {
+        setState(() {
+          _isLoading = false;
+          _stateUpdatePending = false;
+        });
+        print('DASHBOARD TRACKING: setState() - Données chargées et graphiques préparés');
+      } else {
+        // On marque simplement que le chargement est terminé sans actualiser l'UI
+        _isLoading = false;
+        print('DASHBOARD TRACKING: Chargement terminé SANS setState (actualisation unique)');
+      }
 
     } catch (e) {
       print('Erreur lors du chargement complet des données: $e');
+      
+      // En cas d'erreur, on réinitialise l'état de chargement
+      _isLoading = false;
+      
+      // Si nous ne supprimons pas le setState final, mettons à jour l'UI pour l'erreur
+      if (!suppressFinalSetState && mounted) {
+        setState(() {
+          _stateUpdatePending = false;
+        });
+        print('DASHBOARD TRACKING: setState() - Après erreur dans _loadFullData');
+      }
+      
       rethrow;
     }
   }
 
   // Version non-bloquante du chargement complet qui s'exécute en arrière-plan
-  Future<void> _loadFullDataInBackground() async {
+  // Avec option pour supprimer le setState final pour une actualisation unique
+  Future<void> _loadFullDataInBackground({bool suppressFinalSetState = false}) async {
     try {
-      // Le même chargement mais en arrière-plan
+      print('DASHBOARD TRACKING: _loadFullDataInBackground() - Début');
+      
+      // Vérifier si le widget est monté avant de procéder
+      if (!mounted) {
+        print('DASHBOARD TRACKING: Widget non monté, annulation du chargement en arrière-plan');
+        return;
+      }
+      
+      // Chargement en parallèle pour optimiser
       final results = await Future.wait([
-        _projectService.getAllProjects(),
+        _projectService.getAccessibleProjects(), // Utiliser getAccessibleProjects() pour respecter RBAC
         _taskService.getAllTasks(),
         _phaseService.getAllPhases(),
         _projectFinanceService.getAllProjectTransactions(),
@@ -218,61 +392,91 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _budgetService.getRecentTransactions(10),
       ]);
 
+      // Vérifier à nouveau si le widget est monté après le chargement
+      if (!mounted) {
+        print('DASHBOARD TRACKING: Widget non monté après chargement, arrêt du traitement');
+        return;
+      }
+
       // Récupération des résultats avec cast explicite
-      final projects = results[0] as List<Project>;
-      final tasks = results[1] as List<Task>;
-      final phases = results[2] as List<Phase>;
-      final projectTransactions = results[3] as List<ProjectTransaction>;
-      final budgets = results[4] as List<Budget>;
-      final budgetTransactions = results[5] as List<BudgetTransaction>;
-
-      // Mise en cache des nouvelles données
-      if (projects.isNotEmpty) {
-        _cacheService.cacheProjects(projects.map((p) => p.toJson()).toList());
-      }
-
-      if (tasks.isNotEmpty) {
-        _cacheService.cacheTasks(null, tasks.map((t) => t.toJson()).toList());
-      }
-
-      if (phases.isNotEmpty) {
-        _cacheService.cachePhases(null, phases.map((p) => p.toJson()).toList());
-      }
-
-      if (projectTransactions.isNotEmpty) {
-        _cacheService.cacheTransactions(null, projectTransactions.map((t) => t.toJson()).toList());
-      }
-
-      // Si le widget est toujours monté, mettre à jour les données
-      if (mounted) {
+      final newProjects = results[0] as List<Project>;
+      final newTasks = results[1] as List<Task>;
+      final newPhases = results[2] as List<Phase>;
+      final newTransactions = results[3] as List<ProjectTransaction>;
+      final newBudgets = results[4] as List<Budget>;
+      final newBudgetTransactions = results[5] as List<BudgetTransaction>;
+      
+      // Filtrer les données par projets accessibles
+      final Set<String> accessibleProjectIds = newProjects.map((p) => p.id).toSet();
+      final filteredTasks = newTasks.where((task) => accessibleProjectIds.contains(task.projectId)).toList();
+      final filteredPhases = newPhases.where((phase) => accessibleProjectIds.contains(phase.projectId)).toList();
+      final filteredTransactions = newTransactions.where((tx) => accessibleProjectIds.contains(tx.projectId)).toList();
+      
+      print('DASHBOARD TRACKING: Données fraîches chargées en arrière-plan');
+      
+      // Si on ne supprime pas le setState final, on met à jour maintenant
+      if (!suppressFinalSetState && mounted) {
         setState(() {
-          _projectsList = projects;
-          _tasksList = tasks;
-          _phasesList = phases;
-          _projectTransactionsList = projectTransactions;
-          _budgetsList = budgets;
-          _budgetTransactionsList = budgetTransactions;
-
-          // Créer un mapping des tâches
+          // Mettre à jour le state avec les données filtrées
+          _projectsList = newProjects;
+          _tasksList = filteredTasks;
+          _phasesList = filteredPhases;
+          _projectTransactionsList = filteredTransactions;
+          _budgetsList = newBudgets;
+          _budgetTransactionsList = newBudgetTransactions;
+          
+          // Recréer le mapping des tâches
           _tasksMap = {for (var task in _tasksList) task.id: task};
+        });
+        print('DASHBOARD TRACKING: setState() - Mise à jour des données fraîches');
+      } else {
+        // Si on supprime le setState, on met quand même à jour les variables d'état
+        // mais sans déclencher de reconstruction
+        _projectsList = newProjects;
+        _tasksList = filteredTasks;
+        _phasesList = filteredPhases;
+        _projectTransactionsList = filteredTransactions;
+        _budgetsList = newBudgets;
+        _budgetTransactionsList = newBudgetTransactions;
+        _tasksMap = {for (var task in _tasksList) task.id: task};
+        print('DASHBOARD TRACKING: Données mis à jour SANS setState (actualisation unique)');
+      }
+      
+      // Mettre en cache pour la prochaine visite (toujours, indépendamment du mode d'actualisation)
+      if (newProjects.isNotEmpty) {
+        _cacheService.cacheProjects(newProjects.map((p) => p.toJson()).toList());
+      }
+      if (filteredTasks.isNotEmpty) {
+        _cacheService.cacheTasks(null, filteredTasks.map((t) => t.toJson()).toList());
+      }
+      if (filteredPhases.isNotEmpty) {
+        _cacheService.cachePhases(null, filteredPhases.map((p) => p.toJson()).toList());
+      }
+      if (filteredTransactions.isNotEmpty) {
+        _cacheService.cacheTransactions(null, filteredTransactions.map((t) => t.toJson()).toList());
+      }
 
-          // Préparer toutes les données pour les graphiques
-          _prepareAllChartData().then((_) {
-            // Rafraîchir l'UI quand les données du budget planifié sont prêtes
-            if (mounted) setState(() {});
+      // Charger l'historique des tâches récentes (limité à 50)
+      await _loadTaskHistory();
+
+      // Préparer les graphiques une seule fois à la fin
+      if (mounted) {
+        await _prepareAllChartData(suppressSetState: suppressFinalSetState);
+        
+        // Si on supprime le setState final, on marque simplement que la mise à jour est terminée
+        if (suppressFinalSetState) {
+          print('DASHBOARD TRACKING: Préparation des graphiques terminée sans setState (actualisation unique)');
+        } else {
+          // Un seul setState si on ne supprime pas la mise à jour finale
+          setState(() {
+            _stateUpdatePending = false;
           });
-        });
-
-        // Charger l'historique des tâches en arrière-plan et mettre à jour l'interface
-        _loadTaskHistory().then((_) {
-          if (mounted) {
-            setState(() {});
-          }
-        });
+          print('DASHBOARD TRACKING: setState() - Actualisation après préparation des graphiques');
+        }
       }
     } catch (e) {
-      // Silencieux en arrière-plan pour ne pas déranger l'utilisateur
-      print('Erreur lors du chargement en arrière-plan: $e');
+      print('Erreur lors du chargement des données en arrière-plan: $e');
+      // On ne montre pas d'erreur à l'utilisateur car c'est un chargement en arrière-plan
     }
   }
 
@@ -320,12 +524,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // Prépare toutes les données pour les graphiques et widgets
-  Future<void> _prepareAllChartData() async {
+  Future<void> _prepareAllChartData({bool suppressSetState = false}) async {
+    print('DASHBOARD TRACKING: _prepareAllChartData() appelé' + (suppressSetState ? ' (sans setState)' : ''));
+    
+    // Vérifier si le widget est toujours monté avant de procéder
+    if (!mounted) {
+      print('DASHBOARD TRACKING: Widget non monté, annulation de la préparation des graphiques');
+      return;
+    }
+    
+    // Marquer les mises à jour en attente si nous ne supprimons pas setState
+    if (!suppressSetState) {
+      _stateUpdatePending = true;
+    }
+    
     // Préfiltrer les données si un projet spécifique est sélectionné
     List<Task> filteredTasks = _tasksList;
     List<Phase> filteredPhases = _phasesList;
     List<ProjectTransaction> filteredTransactions = _projectTransactionsList;
-    
+
     // Si un projet spécifique est sélectionné, filtrer toutes les données
     if (!_showAllProjects && _selectedProjectId != null) {
       // Filtrer les tâches du projet sélectionné
@@ -334,22 +551,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       filteredPhases = _phasesList.where((phase) => phase.projectId == _selectedProjectId).toList();
       // Filtrer les transactions du projet sélectionné
       filteredTransactions = _projectTransactionsList.where((tx) => tx.projectId == _selectedProjectId).toList();
-      
-      print('Projet sélectionné: $_selectedProjectId - Filtrage appliqué');
-      print('Tâches filtrées: ${filteredTasks.length}/${_tasksList.length}');
-      print('Phases filtrées: ${filteredPhases.length}/${_phasesList.length}');
-      print('Transactions filtrées: ${filteredTransactions.length}/${_projectTransactionsList.length}');
-    } else {
-      print('Tous les projets sont sélectionnés - Aucun filtrage appliqué');
     }
 
+    // Préparer les données de manière plus efficace
     _prepareTasksByStatusData(filteredTasks);
     _prepareTasksByPriorityData(filteredTasks);
-    await _prepareProjectProgressData(_projectsList, filteredPhases, filteredTasks);
+    await _prepareProjectProgressData(_projectsList, filteredPhases, filteredTasks, suppressSetState: suppressSetState);
     _prepareUpcomingTasksData(filteredTasks);
     _preparePhaseProgressData(filteredPhases, filteredTasks);
     _prepareBudgetOverviewData(_projectsList);
     _prepareRecentTransactionsData(filteredTransactions);
+    
+    // Réinitialiser le flag de mise à jour en attente
+    if (!suppressSetState && mounted) {
+      setState(() {
+        _stateUpdatePending = false;
+      });
+      print('DASHBOARD TRACKING: setState() - _stateUpdatePending = false');
+    }
   }
 
   void _prepareTasksByStatusData(List<Task> tasks) {
@@ -393,13 +612,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }).toList();
   }
-
-  Future<void> _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks) async {
+  
+  Future<void> _prepareProjectProgressData(List<Project> projects, List<Phase> phases, List<Task> tasks, {bool suppressSetState = false}) async {
+    print('DASHBOARD TRACKING: _prepareProjectProgressData() appelé' + (suppressSetState ? ' (sans setState)' : ''));
     // Liste temporaire pour stocker les résultats
     final List<ProjectProgressData> tempData = [];
     
+    print('DASHBOARD TRACKING: Préparation des données de progression - ' + 
+      (_showAllProjects ? 'Tous les projets' : 'Projet spécifique: ${_selectedProjectId ?? "Aucun"}'));
+
     // Traiter chaque projet
     for (var project in projects) {
+      // Vérifier si ce projet devrait être inclus dans le graphique
+      bool shouldIncludeProject = _showAllProjects || project.id == _selectedProjectId;
+      
+      if (!shouldIncludeProject) {
+        continue; // Passer au projet suivant si ce n'est pas celui sélectionné en mode projet spécifique
+      }
+
       // Calcul du pourcentage de progression
       final projectPhases = phases.where((phase) => phase.projectId == project.id).toList();
       final projectTasks = tasks.where((task) => task.projectId == project.id).toList();
@@ -421,7 +651,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       // Récupérer le budget planifié directement depuis la base de données (sans cache)
       double plannedBudget = await _projectService.getProjectPlannedBudget(project.id);
-      print('Budget planifié pour ${project.name} récupéré directement: $plannedBudget');
+
 
       if (_projectTransactionsList.isNotEmpty) {
         final projectTransactions = _projectTransactionsList.where((tx) => tx.projectId == project.id).toList();
@@ -451,7 +681,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             totalRevenues = usedBudget; // Par défaut, les revenus égalent les dépenses (budget consommé à 100%)
           }
           budgetUsagePercentage = budgetUsagePercentage.clamp(0, 100);
-          
+
           // Calcul du pourcentage par rapport au budget prévu (statique)
           if (plannedBudget > 0) {
             plannedBudgetUsagePercentage = (usedBudget / plannedBudget) * 100;
@@ -462,7 +692,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         } else {
           // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
           budgetUsagePercentage = project.budgetUsagePercentage;
-          
+
           // Calculer le pourcentage par rapport au budget prévu
           if (plannedBudget > 0 && project.budgetConsumed != null) {
             plannedBudgetUsagePercentage = (project.budgetConsumed! / plannedBudget) * 100;
@@ -470,7 +700,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           } else {
             plannedBudgetUsagePercentage = 0;
           }
-          
+
           // Utiliser les valeurs par défaut du projet
           if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
             totalRevenues = project.budgetAllocated!;
@@ -482,7 +712,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       } else {
         // Si pas de transactions accessibles, utiliser la valeur par défaut du projet
         budgetUsagePercentage = project.budgetUsagePercentage;
-        
+
         // Calculer le pourcentage par rapport au budget prévu
         if (plannedBudget > 0 && project.budgetConsumed != null) {
           plannedBudgetUsagePercentage = (project.budgetConsumed! / plannedBudget) * 100;
@@ -490,7 +720,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         } else {
           plannedBudgetUsagePercentage = 0;
         }
-        
+
         // Utiliser les valeurs par défaut du projet
         if (project.budgetAllocated != null && project.budgetAllocated! > 0) {
           totalRevenues = project.budgetAllocated!;
@@ -518,16 +748,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
         budgetUsagePercentage: budgetUsagePercentage,
         plannedBudgetUsagePercentage: plannedBudgetUsagePercentage,
         budgetAmount: totalRevenues,
-        plannedBudgetAmount: plannedBudget, 
+        plannedBudgetAmount: plannedBudget,
         usedBudgetAmount: usedBudget,
         progressColor: _getProgressColor(progressPercentage),
       ));
     }
-    
-    // Mettre à jour la liste finale
-    setState(() {
+
+    // Mettre à jour la liste finale sans setState si demandé
+    if (suppressSetState) {
       _projectProgressData = tempData;
-    });
+      print('DASHBOARD TRACKING: Mise à jour _projectProgressData sans setState (${tempData.length} projets)'); 
+    } else {
+      setState(() {
+        _projectProgressData = tempData;
+      });
+      print('DASHBOARD TRACKING: setState() - Mise à jour _projectProgressData (${tempData.length} projets)');
+    }
   }
 
   void _prepareUpcomingTasksData(List<Task> tasks) {
@@ -947,21 +1183,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _refreshDashboard() async {
+    print('DASHBOARD TRACKING: _refreshDashboard() appelé');
+    
+    // Réinitialiser le flag
+    _stateUpdatePending = false;
+    
     setState(() {
       _isLoading = true;
     });
-    
+    print('DASHBOARD TRACKING: setState() - _isLoading = true (refresh)');
+
     try {
       await _loadFullData();
-    } catch (e) {
-      print('Erreur lors du rafraîchissement des données: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur lors du rafraîchissement des données: $e')),
-      );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      // Vérifier si une mise à jour d'état globale est déjà prévue
+      if (!_stateUpdatePending) {
+        setState(() {
+          _isLoading = false;
+        });
+        print('DASHBOARD TRACKING: setState() - _isLoading = false (refresh.finally)');
+      }
     }
   }
 
@@ -994,83 +1235,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         );
       },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _refreshDashboard,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildWelcomeHeader(),
-                    const SizedBox(height: 24),
-                    _buildSummaryCards(),
-                    const SizedBox(height: 24),
-
-                    // Section des tâches et projets
-                    SizedBox(
-                      height: 730,
-                      child: TasksProjectsSection(
-                        tasksByStatusData: _tasksByStatusData,
-                        tasksByPriorityData: _tasksByPriorityData,
-                        projectProgressData: _projectProgressData,
-                        upcomingTasksData: _upcomingTasksData,
-                        onSeeAllProjects: _navigateToProjectsList,
-                        onSeeAllTasks: _navigateToTasksList,
-                        onProjectTap: _navigateToProjectDetails,
-                        onTaskTap: _navigateToTaskDetails,
-                      ),
-                    ),
-
-                    const SizedBox(height: 30),
-
-                    // Section des phases
-                    SizedBox(
-                      height: 350,
-                      child: PhasesSection(
-                        phaseProgressData: _phaseProgressData,
-                        onSeeAllPhases: _navigateToPhasesList,
-                        onPhaseTap: _navigateToPhaseDetails,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Section budget et finances
-                    SizedBox(
-                      height: 600,
-                      child: CagnotteWebView(
-                        title: 'Cagnotte en ligne',
-                        onSeeAllPressed: _navigateToBudgetScreen,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Section historique des tâches
-                    SizedBox(
-                      height: 400,
-                      child: TaskHistorySection(
-                        taskHistoryData: _taskHistoryList,
-                        userDisplayNames: _userDisplayNames,
-                        tasksMap: _tasksMap,
-                        onSeeAllHistory: null, // Ajoutez une fonction si besoin d'avoir un écran dédié
-                        onTaskTap: _navigateToTaskDetails,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ),
-            ),
     );
   }
 
@@ -1158,7 +1322,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     List<Task> filteredTasks = _tasksList;
     List<Phase> filteredPhases = _phasesList;
     List<Project> relevantProjects = _projectsList;
-    
+
     if (!_showAllProjects && _selectedProjectId != null) {
       filteredTasks = _tasksList.where((task) => task.projectId == _selectedProjectId).toList();
       filteredPhases = _phasesList.where((phase) => phase.projectId == _selectedProjectId).toList();
@@ -1227,8 +1391,272 @@ class _DashboardScreenState extends State<DashboardScreen> {
       onTap: onTap,
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    print('DASHBOARD TRACKING: build() appelé');
+    return Scaffold(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _refreshDashboard,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildWelcomeHeader(),
+                    const SizedBox(height: 24),
+                    _buildSummaryCards(),
+                    const SizedBox(height: 24),
+
+                    // Section des tâches et projets - Nécessite la permission read_task
+                    FutureBuilder<bool>(
+                      future: _checkTasksAccessPermission(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+
+                        final hasAccess = snapshot.data ?? false;
+
+                        if (hasAccess) {
+                          return SizedBox(
+                            height: 730,
+                            // Utilisation de RepaintBoundary pour isoler cette section coûteuse
+                            // et éviter sa reconstruction si elle n'a pas changé
+                            child: RepaintBoundary(
+                              child: TasksProjectsSection(
+                                tasksByStatusData: _tasksByStatusData,
+                                tasksByPriorityData: _tasksByPriorityData,
+                                projectProgressData: _projectProgressData,
+                                upcomingTasksData: _upcomingTasksData,
+                                onSeeAllProjects: _navigateToProjectsList,
+                                onSeeAllTasks: _navigateToTasksList,
+                                onProjectTap: _navigateToProjectDetails,
+                                onTaskTap: _navigateToTaskDetails,
+                              ),
+                            ),
+                          );
+                        } else {
+                          return Container(
+                            height: 200,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.lock_outline, size: 48, color: Colors.grey[400]),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Vous n\'avez pas accès aux tâches',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Contactez un administrateur pour obtenir les permissions nécessaires',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey[500],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+
+                    // Espacement adaptatif basé sur la largeur d'écran
+                    Builder(builder: (context) {
+                      double screenWidth = MediaQuery.of(context).size.width;
+                      // Sur les grands écrans (≥600px), réduire considérablement l'espacement
+                      // puisque "Tâches à venir" a été déplacé vers le haut
+                      double height = screenWidth >= 600 ? 5 : 30;
+                      return SizedBox(height: height);
+                    }),
+
+                    // Section des phases - Nécessite la permission read_phase
+                    FutureBuilder<bool>(
+                      future: _checkPhasesAccessPermission(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+
+                        final hasAccess = snapshot.data ?? false;
+
+                        if (hasAccess) {
+                          return SizedBox(
+                            height: 350,
+                            // Utilisation de RepaintBoundary pour isoler cette section
+                            child: RepaintBoundary(
+                              child: PhasesSection(
+                                phaseProgressData: _phaseProgressData,
+                                onSeeAllPhases: _navigateToPhasesList,
+                                onPhaseTap: _navigateToPhaseDetails,
+                              ),
+                            ),
+                          );
+                        } else {
+                          return Container(); // Section masquée si pas d'accès
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Section budget et finances - Nécessite la permission read_transaction
+                    FutureBuilder<bool>(
+                      future: _checkFinanceAccessPermission(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+
+                        final hasAccess = snapshot.data ?? false;
+
+                        if (hasAccess) {
+                          return SizedBox(
+                            height: 600,
+                            // Utilisation de RepaintBoundary pour isoler cette section
+                            child: RepaintBoundary(
+                              child: CagnotteWebView(
+                                title: 'Cagnotte en ligne',
+                                onSeeAllPressed: _navigateToBudgetScreen,
+                              ),
+                            ),
+                          );
+                        } else {
+                          return Container(); // Section masquée si pas d'accès
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Section de l'historique des tâches - Nécessite read_task
+                    FutureBuilder<bool>(
+                      future: _checkTasksAccessPermission(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+
+                        final hasAccess = snapshot.data ?? false;
+
+                        if (hasAccess) {
+                          return SizedBox(
+                            height: 500,
+                            // Utilisation de RepaintBoundary pour isoler cette section
+                            child: RepaintBoundary(
+                              child: TaskHistorySection(
+                                taskHistoryData: _taskHistoryList,
+                                userDisplayNames: _userDisplayNames,
+                                tasksMap: _tasksMap,
+                                onTaskTap: _navigateToTaskDetails,
+                              ),
+                            ),
+                          );
+                        } else {
+                          return Container(); // Section masquée si pas d'accès
+                        }
+                      },
+                    ),
+
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  // Méthodes de vérification d'accès pour chaque section
+  Future<bool> _checkTasksAccessPermission() async {
+    // Utiliser la valeur en cache si disponible
+    if (_permissionCache.containsKey('read_task')) {
+      return _permissionCache['read_task']!;
+    }
+
+    try {
+      // Vérifier si l'utilisateur a le rôle "observer"
+      final userRoles = await _roleService.getUserRolesWithoutParam();
+
+      if (userRoles.contains('observer')) {
+        return true;
+      }
+
+      // Si n'est pas un observer, vérifier la permission standard
+      final hasPermission = await Provider.of<RoleProvider>(context, listen: false)
+          .hasPermission('read_task');
+      return hasPermission;
+    } catch (e) {
+      print('Erreur lors de la vérification de l\'accès aux tâches: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _checkPhasesAccessPermission() async {
+    // Utiliser la valeur en cache si disponible
+    if (_permissionCache.containsKey('read_phase')) {
+      return _permissionCache['read_phase']!;
+    }
+
+    try {
+      // Vérifier si l'utilisateur a le rôle "observer"
+      final userRoles = await _roleService.getUserRolesWithoutParam();
+
+      if (userRoles.contains('observer')) {
+        return true;
+      }
+
+      // Si n'est pas un observer, vérifier la permission standard
+      final hasPermission = await Provider.of<RoleProvider>(context, listen: false)
+          .hasPermission('read_phase');
+      return hasPermission;
+    } catch (e) {
+      print('Erreur lors de la vérification de l\'accès aux phases: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _checkFinanceAccessPermission() async {
+    // Utiliser la valeur en cache si disponible
+    if (_permissionCache.containsKey('read_transaction')) {
+      return _permissionCache['read_transaction']!;
+    }
+
+    try {
+      // Vérifier si l'utilisateur a le rôle "observer"
+      final userRoles = await _roleService.getUserRolesWithoutParam();
+
+      if (userRoles.contains('observer')) {
+        return true;
+      }
+
+      // Si n'est pas un observer, vérifier la permission standard
+      final hasPermission = await Provider.of<RoleProvider>(context, listen: false)
+          .hasPermission('read_transaction');
+      return hasPermission;
+    } catch (e) {
+      print('Erreur lors de la vérification de l\'accès aux finances: $e');
+      return false;
+    }
+  }
 }
 
+// Widget de carte de résumé pour le tableau de bord
 class SummaryCardWidget extends StatefulWidget {
   final String title;
   final String value;
@@ -1264,7 +1692,7 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
     final double containerSize = isSmallScreen ? 32 : 40;
     final double fontSize = isSmallScreen ? 11 : (isMediumScreen ? 12 : 15);
     final double titleFontSize = isSmallScreen ? 10 : (isMediumScreen ? 11 : 12);
-    final EdgeInsets padding = isSmallScreen 
+    final EdgeInsets padding = isSmallScreen
         ? const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0)
         : const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0);
 
@@ -1320,33 +1748,31 @@ class _SummaryCardWidgetState extends State<SummaryCardWidget> {
                   ],
                 ),
               ),
-              // Étiquette transparente qui apparaît lors du clic
-              //if (_isPressed)
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 8.0),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(12),
-                        bottomRight: Radius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      widget.title,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: titleFontSize,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 8.0),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(12),
+                      bottomRight: Radius.circular(12),
                     ),
                   ),
+                  child: Text(
+                    widget.title,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: titleFontSize,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+              ),
             ],
           ),
         ),

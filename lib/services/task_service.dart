@@ -1,8 +1,10 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/task_model.dart';
+import 'role_service.dart';
 
 class TaskService {
   final SupabaseClient _supabase = Supabase.instance.client;
+  final RoleService _roleService = RoleService();
 
   // Récupère toutes les tâches
   Future<List<Task>> getAllTasks() async {
@@ -71,6 +73,16 @@ class TaskService {
   // Crée une nouvelle tâche
   Future<Task?> createTask(Task task) async {
     try {
+      // Vérifier si l'utilisateur a la permission de créer une tâche dans ce projet
+      final hasPermission = await _roleService.hasPermission(
+        'create_task',
+        projectId: task.projectId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de créer une tâche dans ce projet');
+      }
+      
       final response = await _supabase
           .from('tasks')
           .insert(task.toJson())
@@ -87,6 +99,16 @@ class TaskService {
   // Met à jour une tâche existante
   Future<Task?> updateTask(Task task) async {
     try {
+      // Vérifier si l'utilisateur a la permission de mettre à jour la tâche
+      final hasPermission = await _roleService.hasPermission(
+        'update_task',
+        projectId: task.projectId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de modifier cette tâche');
+      }
+      
       final response = await _supabase
           .from('tasks')
           .update(task.toJson())
@@ -104,6 +126,25 @@ class TaskService {
   // Supprime une tâche
   Future<bool> deleteTask(String taskId) async {
     try {
+      // D'abord, récupérer la tâche pour obtenir le projectId
+      final taskData = await _supabase
+          .from('tasks')
+          .select('project_id')
+          .eq('id', taskId)
+          .single();
+      
+      final projectId = taskData['project_id'] as String;
+      
+      // Vérifier si l'utilisateur a la permission de supprimer la tâche
+      final hasPermission = await _roleService.hasPermission(
+        'delete_task',
+        projectId: projectId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de supprimer cette tâche');
+      }
+      
       await _supabase.from('tasks').delete().eq('id', taskId);
       return true;
     } catch (e) {

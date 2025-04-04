@@ -76,7 +76,7 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
   Future<void> _loadProjectTeams() async {
     try {
       if (widget.project != null) {
-        final projectTeams = await _teamService.getTeamProjects(widget.project!.id);
+        final projectTeams = await _teamService.getTeamsByProject(widget.project!.id);
         setState(() {
           _selectedTeamIds = projectTeams.map((team) => team.id).toList();
         });
@@ -156,10 +156,37 @@ class _ProjectFormScreenState extends State<ProjectFormScreen> {
       }
       
       if (savedProject != null) {
-        await _teamService.removeAllTeamsFromProject(savedProject.id);
-        
-        for (String teamId in _selectedTeamIds) {
-          await _teamService.addProjectToTeam(teamId, savedProject.id);
+        // Supprimer d'abord toutes les associations existantes
+        try {
+          await _teamService.removeAllTeamsFromProject(savedProject.id);
+          
+          // Tenir une liste des équipes ajoutées avec succès
+          List<String> successfulTeams = [];
+          List<String> failedTeams = [];
+          
+          // Ajouter les nouvelles associations
+          for (String teamId in _selectedTeamIds) {
+            bool success = await _teamService.addProjectToTeam(teamId, savedProject.id);
+            if (success) {
+              successfulTeams.add(teamId);
+            } else {
+              failedTeams.add(teamId);
+            }
+          }
+          
+          // Si certaines équipes n'ont pas pu être ajoutées, afficher un avertissement
+          if (failedTeams.isNotEmpty) {
+            setState(() {
+              _errorMessage = 'Le projet a été ${widget.project == null ? 'créé' : 'modifié'}, mais certaines équipes n\'ont pas pu être assignées.';
+              _isLoading = false;
+            });
+            
+            // Attendre un court instant pour que l'utilisateur voie le message
+            await Future.delayed(const Duration(seconds: 2));
+          }
+        } catch (e) {
+          print('Erreur lors de la gestion des équipes: $e');
+          // Continuer malgré l'erreur pour permettre la création/modification du projet
         }
       }
 

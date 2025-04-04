@@ -28,102 +28,59 @@ class TasksProjectsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Utiliser la même disposition pour tous les écrans (empilé verticalement)
+    // Adapte dynamiquement certaines valeurs en fonction de la taille d'écran
     final screenWidth = MediaQuery.of(context).size.width;
-    final isSmallScreen = screenWidth < 600;
+    final bool isLargeScreen = screenWidth >= 600;
     
-    if (isSmallScreen) {
-      // Layout pour petit écran (empilé verticalement)
-      return Column(
-        children: [
-          SizedBox(
-            height: 230,
-            child: Row(
-              children: [
-                Expanded(
-                  child: TaskDistributionChart(
-                    data: tasksByStatusData,
-                    title: 'Tâches par statut',
-                  ),
+    // Ajuster les hauteurs en fonction de la taille d'écran
+    final double chartsHeight = isLargeScreen ? 250 : 230;
+    final double progressHeight = isLargeScreen ? 240 : 220;
+    final double timelineHeight = isLargeScreen ? 260 : 240;
+    
+    return Column(
+      children: [
+        SizedBox(
+          height: chartsHeight,
+          child: Row(
+            children: [
+              Expanded(
+                child: TaskDistributionChart(
+                  data: tasksByStatusData,
+                  title: 'Tâches par statut',
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TaskDistributionChart(
-                    data: tasksByPriorityData,
-                    title: 'Tâches par priorité',
-                  ),
+              ),
+              SizedBox(width: isLargeScreen ? 16 : 10),
+              Expanded(
+                child: TaskDistributionChart(
+                  data: tasksByPriorityData,
+                  title: 'Tâches par priorité',
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 220,
-            child: ProjectProgressChart(
-              data: projectProgressData,
-              title: 'Progression des projets',
-              onSeeAllPressed: onSeeAllProjects,
-              onProjectTap: onProjectTap,
-            ),
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+          height: progressHeight,
+          child: ProjectProgressChart(
+            data: projectProgressData,
+            title: 'Progression des projets',
+            onSeeAllPressed: onSeeAllProjects,
+            onProjectTap: onProjectTap,
           ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 240,
-            child: TaskTimelineChart(
-              data: upcomingTasksData,
-              title: 'Tâches à venir',
-              onSeeAllPressed: onSeeAllTasks,
-              onTaskTap: onTaskTap,
-            ),
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+          height: timelineHeight,
+          child: TaskTimelineChart(
+            data: upcomingTasksData,
+            title: 'Tâches à venir',
+            onSeeAllPressed: onSeeAllTasks,
+            onTaskTap: onTaskTap,
           ),
-        ],
-      );
-    } else {
-      // Layout pour grand écran (plus de colonnes)
-      return Column(
-        children: [
-          SizedBox(
-            height: 280,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: TaskTimelineChart(
-                    data: upcomingTasksData,
-                    title: 'Tâches à venir',
-                    onSeeAllPressed: onSeeAllTasks,
-                    onTaskTap: onTaskTap,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: TaskDistributionChart(
-                    data: tasksByStatusData,
-                    title: 'Tâches par statut',
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: TaskDistributionChart(
-                    data: tasksByPriorityData,
-                    title: 'Tâches par priorité',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 220,
-            child: ProjectProgressChart(
-              data: projectProgressData,
-              title: 'Progression des projets',
-              onSeeAllPressed: onSeeAllProjects,
-              onProjectTap: onProjectTap,
-            ),
-          ),
-        ],
-      );
-    }
+        ),
+      ],
+    );
   }
 }

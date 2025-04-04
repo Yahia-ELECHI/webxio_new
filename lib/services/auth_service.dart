@@ -48,6 +48,7 @@ class AuthService {
   Future<AuthResponse> signUpWithEmailAndPassword({
     required String email,
     required String password,
+    required String displayName,
   }) async {
     try {
       print('Tentative d\'inscription avec email: $email');
@@ -55,6 +56,15 @@ class AuthService {
         email: email,
         password: password,
       );
+      
+      // Ajouter le displayName au profil utilisateur
+      if (response.user != null) {
+        await _client.from('profiles').update({
+          'display_name': displayName,
+        }).eq('id', response.user!.id);
+        print('Profil utilisateur mis à jour avec le nom d\'affichage: $displayName');
+      }
+      
       print('Inscription réussie: ${response.user?.email}');
       return response;
     } catch (e) {

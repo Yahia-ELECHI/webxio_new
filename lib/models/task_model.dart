@@ -159,9 +159,9 @@ enum TaskStatus {
   todo,
   inProgress,
   review,
-  completed,
-  onHold,
-  cancelled;
+  completed;
+  //onHold,
+  //cancelled;
 
   String get displayName {
     switch (this) {
@@ -173,10 +173,10 @@ enum TaskStatus {
         return 'En révision';
       case TaskStatus.completed:
         return 'Terminée';
-      case TaskStatus.onHold:
-        return 'En attente';
-      case TaskStatus.cancelled:
-        return 'Annulée';
+      //case TaskStatus.onHold:
+      //  return 'En attente';
+      //case TaskStatus.cancelled:
+      //  return 'Annulée';
     }
   }
 
@@ -190,10 +190,10 @@ enum TaskStatus {
         return Colors.orange;
       case TaskStatus.completed:
         return Colors.green;
-      case TaskStatus.onHold:
-        return Colors.amber;
-      case TaskStatus.cancelled:
-        return Colors.red;
+      //case TaskStatus.onHold:
+      //  return Colors.amber;
+      //case TaskStatus.cancelled:
+      //  return Colors.red;
     }
   }
   
@@ -208,10 +208,10 @@ enum TaskStatus {
         return 'review';
       case TaskStatus.completed:
         return 'completed';
-      case TaskStatus.onHold:
-        return 'on_hold';
-      case TaskStatus.cancelled:
-        return 'cancelled';
+      //case TaskStatus.onHold:
+      //  return 'on_hold';
+      //case TaskStatus.cancelled:
+      //  return 'cancelled';
     }
   }
   
@@ -234,11 +234,11 @@ enum TaskStatus {
         return TaskStatus.review;
       case 'completed':
         return TaskStatus.completed;
-      case 'on_hold':
-      case 'onHold':  
-        return TaskStatus.onHold;
-      case 'cancelled':
-        return TaskStatus.cancelled;
+      //case 'on_hold':
+      //case 'onHold':  
+      //  return TaskStatus.onHold;
+      //case 'cancelled':
+      //  return TaskStatus.cancelled;
       default:
         return TaskStatus.todo;
     }

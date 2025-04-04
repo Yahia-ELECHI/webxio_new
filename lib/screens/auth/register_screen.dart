@@ -17,6 +17,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _displayNameController = TextEditingController();
   
   final AuthService _authService = AuthService();
   
@@ -30,6 +31,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _displayNameController.dispose();
     super.dispose();
   }
 
@@ -47,6 +49,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final response = await _authService.signUpWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
+        displayName: _displayNameController.text.trim(),
       );
 
       if (mounted) {
@@ -177,6 +180,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            // Nom d'affichage
+                            TextFormField(
+                              controller: _displayNameController,
+                              decoration: InputDecoration(
+                                labelText: 'Nom d\'affichage',
+                                labelStyle: TextStyle(color: Colors.white70),
+                                hintText: 'Entrez votre nom d\'affichage',
+                                hintStyle: TextStyle(color: Colors.white30),
+                                prefixIcon: Icon(Icons.person, color: Colors.white70),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(color: Colors.white30),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(color: Colors.white30),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: BorderSide(color: Colors.white),
+                                ),
+                                filled: true,
+                                fillColor: Colors.white.withOpacity(0.05),
+                              ),
+                              style: TextStyle(color: Colors.white),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Veuillez entrer votre nom d\'affichage';
+                                }
+                                return null;
+                              },
+                            ),
+                            
+                            const SizedBox(height: 20),
+
                             // Email
                             TextFormField(
                               controller: _emailController,

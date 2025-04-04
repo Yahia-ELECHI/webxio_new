@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import '../models/project_transaction_model.dart';
 import '../screens/budget/transaction_form_screen.dart';
 import '../screens/budget/transaction_list_screen.dart';
+import '../services/role_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class BudgetSummaryWidget extends StatelessWidget {
   final double? budgetAllocated;
@@ -87,6 +89,8 @@ class BudgetSummaryWidget extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    // Bouton commenté car remplacé par le bouton "Nouvelle transaction" avec vérification RBAC
+                    /*
                     if (showAddButton && onAddPressed != null)
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline, color: Colors.blue),
@@ -95,6 +99,7 @@ class BudgetSummaryWidget extends StatelessWidget {
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
+                    */
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -160,61 +165,101 @@ class BudgetSummaryWidget extends StatelessWidget {
               alignment: MainAxisAlignment.center,
               children: [
                 TextButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TransactionFormScreen(
-                          projectId: projectId,
-                          phaseId: phaseId,
-                          taskId: taskId,
+                  onPressed: () async {
+                    // Vérifier la permission create_transaction avant d'ouvrir le formulaire
+                    final roleService = RoleService();
+                    final hasPermission = await roleService.hasPermission('create_transaction', projectId: projectId);
+                    
+                    if (!hasPermission) {
+                      // Si l'utilisateur n'a pas la permission, afficher un message d'erreur
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Vous n\'avez pas la permission de créer une transaction'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                      return;
+                    }
+                    
+                    // Si l'utilisateur a la permission, ouvrir le formulaire
+                    if (context.mounted) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TransactionFormScreen(
+                            projectId: projectId,
+                            phaseId: phaseId,
+                            taskId: taskId,
+                          ),
                         ),
-                      ),
-                    ).then((result) {
-                      if (result != null) {
-                        if (result is ProjectTransaction && onTransactionAdded != null) {
-                          // Transaction créée ou mise à jour
-                          onTransactionAdded!(result);
-                        } else if (result is Map && result['deleted'] == true && onTransactionDeleted != null) {
-                          // Transaction supprimée
-                          final String transactionId = result['transactionId'];
-                          final deletedTransaction = transactions?.firstWhere(
-                            (t) => t.id == transactionId,
-                            orElse: () => ProjectTransaction(
-                              id: transactionId,
-                              projectId: projectId ?? '',
-                              projectName: '',
-                              amount: 0,
-                              description: '',
-                              transactionDate: DateTime.now(),
-                              category: 'other',
-                              createdAt: DateTime.now(),
-                              createdBy: '',
-                              transactionType: 'expense',
-                            ),
-                          );
-                          if (deletedTransaction != null) {
-                            onTransactionDeleted!(deletedTransaction);
+                      ).then((result) {
+                        if (result != null) {
+                          if (result is ProjectTransaction && onTransactionAdded != null) {
+                            // Transaction créée ou mise à jour
+                            onTransactionAdded!(result);
+                          } else if (result is Map && result['deleted'] == true && onTransactionDeleted != null) {
+                            // Transaction supprimée
+                            final String transactionId = result['transactionId'];
+                            final deletedTransaction = transactions?.firstWhere(
+                              (t) => t.id == transactionId,
+                              orElse: () => ProjectTransaction(
+                                id: transactionId,
+                                projectId: projectId ?? '',
+                                projectName: '',
+                                amount: 0,
+                                description: '',
+                                transactionDate: DateTime.now(),
+                                category: 'other',
+                                createdAt: DateTime.now(),
+                                createdBy: '',
+                                transactionType: 'expense',
+                              ),
+                            );
+                            if (deletedTransaction != null) {
+                              onTransactionDeleted!(deletedTransaction);
+                            }
                           }
                         }
-                      }
-                    });
+                      });
+                    }
                   },
                   icon: const Icon(Icons.add),
                   label: const Text('Nouvelle transaction'),
                 ),
                 TextButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TransactionListScreen(
-                          projectId: projectId,
-                          phaseId: phaseId,
-                          taskId: taskId,
+                  onPressed: () async {
+                    // Vérifier la permission read_all_transactions avant d'ouvrir la liste
+                    final roleService = RoleService();
+                    final hasPermission = await roleService.hasPermission('read_all_transactions', projectId: projectId);
+                    
+                    if (!hasPermission) {
+                      // Si l'utilisateur n'a pas la permission, afficher un message d'erreur
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Vous n\'avez pas la permission de voir toutes les transactions'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                      return;
+                    }
+                    
+                    // Si l'utilisateur a la permission, ouvrir la liste
+                    if (context.mounted) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TransactionListScreen(
+                            projectId: projectId,
+                            phaseId: phaseId,
+                            taskId: taskId,
+                          ),
                         ),
-                      ),
-                    );
+                      );
+                    }
                   },
                   icon: const Icon(Icons.list),
                   label: const Text('Voir toutes les transactions'),
@@ -288,21 +333,41 @@ class BudgetSummaryWidget extends StatelessWidget {
                   color: amountColor,
                 ),
               ),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => TransactionFormScreen(
-                      transaction: transaction,
-                    ),
-                  ),
-                ).then((updatedTransaction) {
-                  if (updatedTransaction != null) {
-                    if (onTransactionUpdated != null) {
-                      onTransactionUpdated!(updatedTransaction);
-                    }
+              onTap: () async {
+                // Vérifier la permission read_transaction avant d'ouvrir le formulaire
+                final roleService = RoleService();
+                final hasPermission = await roleService.hasPermission('update_transaction', projectId: transaction.projectId);
+                
+                if (!hasPermission) {
+                  // Si l'utilisateur n'a pas la permission, afficher un message d'erreur
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Vous n\'avez pas la permission de modifier cette transaction'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
                   }
-                });
+                  return;
+                }
+                
+                // Si l'utilisateur a la permission, ouvrir le formulaire
+                if (context.mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => TransactionFormScreen(
+                        transaction: transaction,
+                      ),
+                    ),
+                  ).then((updatedTransaction) {
+                    if (updatedTransaction != null) {
+                      if (onTransactionUpdated != null) {
+                        onTransactionUpdated!(updatedTransaction);
+                      }
+                    }
+                  });
+                }
               },
             );
           },

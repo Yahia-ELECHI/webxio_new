@@ -265,14 +265,14 @@ class _TaskFormState extends State<TaskForm> {
                     value: TaskStatus.completed.toValue(),
                     child: Text(TaskStatus.completed.getText()),
                   ),
-                  DropdownMenuItem(
-                    value: TaskStatus.onHold.toValue(),
-                    child: Text(TaskStatus.onHold.getText()),
-                  ),
-                  DropdownMenuItem(
-                    value: TaskStatus.cancelled.toValue(),
-                    child: Text(TaskStatus.cancelled.getText()),
-                  ),
+                  //DropdownMenuItem(
+                  //  value: TaskStatus.onHold.toValue(),
+                  //  child: Text(TaskStatus.onHold.getText()),
+                  //),
+                  //DropdownMenuItem(
+                  //  value: TaskStatus.cancelled.toValue(),
+                  //  child: Text(TaskStatus.cancelled.getText()),
+                  //),
                 ],
                 onChanged: (value) {
                   if (value != null) {

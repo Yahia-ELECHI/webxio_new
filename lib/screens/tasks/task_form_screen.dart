@@ -7,6 +7,9 @@ import '../../services/project_service/project_service.dart';
 import '../../services/phase_service/phase_service.dart';
 import '../../services/team_service/team_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/role_service.dart';
+import '../../widgets/rbac_gated_screen.dart';
+import '../../widgets/permission_gated.dart';
 
 class TaskFormScreen extends StatefulWidget {
   final String projectId;
@@ -33,6 +36,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   final PhaseService _phaseService = PhaseService();
   final TeamService _teamService = TeamService();
   final AuthService _authService = AuthService();
+  final RoleService _roleService = RoleService();
   
   String _status = TaskStatus.todo.name;
   int _priority = TaskPriority.medium.value;
@@ -265,11 +269,17 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.task == null ? 'Nouvelle tâche' : 'Modifier la tâche'),
+    final permissionName = widget.task == null ? 'create_task' : 'update_task';
+    
+    return RbacGatedScreen(
+      permissionName: permissionName,
+      projectId: widget.projectId,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.task == null ? 'Nouvelle tâche' : 'Modifier la tâche'),
+        ),
+        body: _buildBody(),
       ),
-      body: _buildBody(),
     );
   }
 
@@ -305,97 +315,104 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             ),
             const SizedBox(height: 16),
             
-            // Ajout d'un switch pour choisir entre assignation individuelle ou équipe
-            SwitchListTile(
-              title: const Text('Assigner à une équipe'),
-              value: _assignToTeam,
-              onChanged: (value) {
-                setState(() {
-                  _assignToTeam = value;
-                });
-              },
+            // Contrôle d'assignation avec permission 'assign_task'
+            PermissionGated(
+              permissionName: 'assign_task',
+              projectId: widget.projectId,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Ajout d'un switch pour choisir entre assignation individuelle ou équipe
+                  SwitchListTile(
+                    title: const Text('Assigner à une équipe'),
+                    value: _assignToTeam,
+                    onChanged: (value) {
+                      setState(() {
+                        _assignToTeam = value;
+                      });
+                    },
+                  ),
+                  
+                  // Afficher le champ approprié selon le choix d'assignation
+                  if (!_assignToTeam) ...[
+                    if (_loadingTeamMembers)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    else ...[
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Membre assigné',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _selectedMemberId,
+                        hint: const Text('Sélectionner un membre'),
+                        items: _getUniqueMembers().map((member) {
+                          // Générer une clé unique basée sur l'ID du membre
+                          final String memberId = member['id'] as String;
+                          
+                          return DropdownMenuItem<String>(
+                            key: ValueKey('member-$memberId'), // Ajouter une clé unique
+                            value: memberId,
+                            child: Text("${member['fullName']} (${member['email']})"),
+                          );
+                        }).toList(),
+                        validator: (value) {
+                          if (!_assignToTeam && value == null) {
+                            return 'Veuillez sélectionner un membre';
+                          }
+                          return null;
+                        },
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedMemberId = value;
+                          });
+                        },
+                      ),
+                    ],
+                  ] else ...[
+                    if (_loadingTeams)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    else ...[
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Équipe assignée',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _selectedTeamId,
+                        hint: const Text('Sélectionner une équipe'),
+                        items: _teams.map((team) {
+                          return DropdownMenuItem<String>(
+                            key: ValueKey('team-${team.id}'),
+                            value: team.id,
+                            child: Text(team.name),
+                          );
+                        }).toList(),
+                        validator: (value) {
+                          if (_assignToTeam && value == null) {
+                            return 'Veuillez sélectionner une équipe';
+                          }
+                          return null;
+                        },
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedTeamId = value;
+                          });
+                        },
+                      ),
+                    ],
+                  ],
+                ],
+              ),
             ),
-            
-            // Afficher le champ approprié selon le choix d'assignation
-            if (!_assignToTeam) ...[
-              if (_loadingTeamMembers)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else ...[
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'Membre assigné',
-                    border: OutlineInputBorder(),
-                  ),
-                  value: _selectedMemberId,
-                  hint: const Text('Sélectionner un membre'),
-                  items: _getUniqueMembers().map((member) {
-                    // Générer une clé unique basée sur l'ID du membre
-                    final String memberId = member['id'] as String;
-                    
-                    return DropdownMenuItem<String>(
-                      key: ValueKey('member-$memberId'), // Ajouter une clé unique
-                      value: memberId,
-                      child: Text("${member['fullName']} (${member['email']})"),
-                    );
-                  }).toList(),
-                  validator: (value) {
-                    if (!_assignToTeam && value == null) {
-                      return 'Veuillez sélectionner un membre';
-                    }
-                    return null;
-                  },
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedMemberId = value;
-                    });
-                  },
-                ),
-              ],
-            ] else if (_loadingTeams) ...[
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8.0),
-                  child: CircularProgressIndicator(),
-                ),
-              ),
-            ] else if (_teams.isEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8.0),
-                child: Text(
-                  'Aucune équipe disponible pour ce projet',
-                  style: TextStyle(color: Colors.red),
-                ),
-              ),
-            ] else ...[
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: 'Équipe assignée',
-                  border: OutlineInputBorder(),
-                ),
-                value: _selectedTeamId,
-                hint: const Text('Sélectionner une équipe'),
-                items: _teams.map((team) => DropdownMenuItem<String>(
-                  value: team.id,
-                  child: Text(team.name),
-                )).toList(),
-                validator: (value) {
-                  if (_assignToTeam && value == null) {
-                    return 'Veuillez sélectionner une équipe';
-                  }
-                  return null;
-                },
-                onChanged: (value) {
-                  setState(() {
-                    _selectedTeamId = value;
-                  });
-                },
-              ),
-            ],
             const SizedBox(height: 16),
             Row(
               children: [
@@ -423,25 +440,30 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: DropdownButtonFormField<int>(
-                    value: _priority,
-                    decoration: const InputDecoration(
-                      labelText: 'Priorité',
-                      border: OutlineInputBorder(),
+                  // Contrôle de priorité avec permission 'change_task_priority'
+                  child: PermissionGated(
+                    permissionName: 'change_task_priority',
+                    projectId: widget.projectId,
+                    child: DropdownButtonFormField<int>(
+                      value: _priority,
+                      decoration: const InputDecoration(
+                        labelText: 'Priorité',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: TaskPriority.values.map((priority) {
+                        return DropdownMenuItem<int>(
+                          value: priority.value,
+                          child: Text(priority.displayName),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _priority = value;
+                          });
+                        }
+                      },
                     ),
-                    items: TaskPriority.values.map((priority) {
-                      return DropdownMenuItem<int>(
-                        value: priority.value,
-                        child: Text(priority.displayName),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _priority = value;
-                        });
-                      }
-                    },
                   ),
                 ),
               ],

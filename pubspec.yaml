@@ -65,6 +65,8 @@ dependencies:
   timeago: ^3.6.1
   flutter_svg: ^2.0.10+1
   marquee: ^2.3.0
+  provider: ^6.1.2  # Ajout du package provider pour la gestion d'état RBAC
+  flutter_slidable: ^4.0.0
 
 dev_dependencies:
   flutter_test:

@@ -8,6 +8,8 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'providers/role_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/projects/projects_screen.dart';
@@ -144,79 +146,84 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'AL MAHIR',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1F4E5F),
-          primary: const Color(0xFF1F4E5F),
-          secondary: const Color(0xFFE57373),
-        ),
-        useMaterial3: true,
-        fontFamily: 'Roboto',
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1F4E5F),
-          foregroundColor: Colors.white,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1F4E5F),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => RoleProvider()),
+      ],
+      child: MaterialApp(
+        title: 'AL MAHIR',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF1F4E5F),
+            primary: const Color(0xFF1F4E5F),
+            secondary: const Color(0xFFE57373),
+          ),
+          useMaterial3: true,
+          fontFamily: 'Roboto',
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF1F4E5F),
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1F4E5F),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: Colors.grey[100],
+            border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.grey[100],
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(
-              color: Color(0xFF1F4E5F),
-              width: 2,
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(
+                color: Color(0xFF1F4E5F),
+                width: 2,
+              ),
             ),
           ),
         ),
-      ),
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [
-        Locale('fr', 'FR'),
-      ],
-      locale: const Locale('fr', 'FR'),
-      routes: {
-        '/': (context) => const SplashScreen(),
-        '/login': (context) => const LoginScreen(),
-        '/register': (context) => const RegisterScreen(),
-        '/home': (context) => const MainAppScreen(),
-        '/profile': (context) => const ProfileScreen(),
-        '/notifications': (context) => const NotificationsScreen(),
-        '/transaction-categories': (context) => const TransactionCategoriesScreen(),
-        '/invitation': (context) {
-          // Récupérer les paramètres d'URL pour l'invitation
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, String>?;
-          final token = args?['token'] ?? Uri.base.queryParameters['token'] ?? '';
-          final teamId = args?['team'] ?? Uri.base.queryParameters['team'] ?? '';
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('fr', 'FR'),
+        ],
+        locale: const Locale('fr', 'FR'),
+        routes: {
+          '/': (context) => const SplashScreen(),
+          '/login': (context) => const LoginScreen(),
+          '/register': (context) => const RegisterScreen(),
+          '/home': (context) => const MainAppScreen(),
+          '/profile': (context) => const ProfileScreen(),
+          '/notifications': (context) => const NotificationsScreen(),
+          '/transaction-categories': (context) => const TransactionCategoriesScreen(),
+          '/invitation': (context) {
+            // Récupérer les paramètres d'URL pour l'invitation
+            final args = ModalRoute.of(context)!.settings.arguments as Map<String, String>?;
+            final token = args?['token'] ?? Uri.base.queryParameters['token'] ?? '';
+            final teamId = args?['team'] ?? Uri.base.queryParameters['team'] ?? '';
 
-          // Rediriger vers l'écran d'acceptation d'invitation
-          return InvitationAcceptanceScreen(
-            token: token,
-            teamId: teamId,
-          );
+            // Rediriger vers l'écran d'acceptation d'invitation
+            return InvitationAcceptanceScreen(
+              token: token,
+              teamId: teamId,
+            );
+          },
         },
-      },
-      initialRoute: '/',
-      navigatorKey: navigatorKey, // Ajouter la clé de navigateur globale
+        initialRoute: '/',
+        navigatorKey: navigatorKey, // Ajouter la clé de navigateur globale
+      ),
     );
   }
 }
@@ -345,9 +352,9 @@ class _MainAppScreenState extends State<MainAppScreen> {
     const DashboardScreen(),
     const ProjectsScreen(),
     const TeamsScreen(),
-    const CalendarScreen(),
-    const StatisticsScreen(),
-    const ProjectFinanceDashboardScreen(), // Nouveau tableau de bord financier avec sélecteur moderne
+    const CalendarScreenWrapper(), // Utilisation du wrapper pour éviter le flash d'écran d'accès refusé
+    const StatisticsScreenWrapper(), // Utilisation du wrapper pour les statistiques
+    const ProjectFinanceDashboardScreenWrapper(), // Utilisation du wrapper pour les finances
     const ProfileScreen(),
   ];
 
