@@ -5,8 +5,19 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Load almahir-key.properties file
+val keystorePropertiesFile = rootProject.file("almahir-key.properties")
+val keystoreProperties = org.gradle.internal.impldep.org.yaml.snakeyaml.Yaml()
+val readProperties = if (keystorePropertiesFile.exists()) {
+    java.util.Properties().apply {
+        load(java.io.FileInputStream(keystorePropertiesFile))
+    }
+} else {
+    java.util.Properties()
+}
+
 android {
-    namespace = "com.example.webxio_new"
+    namespace = "fr.almahir"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -21,7 +32,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.webxio_new"
+        applicationId = "fr.almahir"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -30,11 +41,25 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                keyAlias = readProperties.getProperty("keyAlias")
+                keyPassword = readProperties.getProperty("keyPassword")
+                storeFile = file(readProperties.getProperty("storeFile"))
+                storePassword = readProperties.getProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Use the signing config if it exists, otherwise fallback to debug
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 }

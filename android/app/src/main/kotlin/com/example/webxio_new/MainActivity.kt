@@ -1,4 +1,4 @@
-package com.example.webxio_new
+package fr.almahir
 
 import io.flutter.embedding.android.FlutterActivity
 
