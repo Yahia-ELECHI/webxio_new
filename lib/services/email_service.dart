@@ -13,7 +13,7 @@ class EmailService {
     required String to,
     required String subject,
     required String htmlContent,
-    String senderName = 'AL MAHIR',
+    String senderName = 'AL MAHIR Project',
     String senderEmail = 'echiyahya@live.fr',
   }) async {
     try {
@@ -71,7 +71,7 @@ class EmailService {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Invitation à rejoindre $teamName sur AL MAHIR</title>
+      <title>Invitation à rejoindre $teamName sur AL MAHIR Project</title>
       <style>
         body {
           margin: 0;
@@ -149,7 +149,7 @@ class EmailService {
       <div class="email-container">
         <div class="content">
           <h2>Invitation à rejoindre l'équipe $teamName</h2>
-          <p>$inviterName vous a invité à rejoindre leur équipe sur l'application AL MAHIR Gestion des Projets.</p>
+          <p>$inviterName vous a invité à rejoindre leur équipe sur l'application AL MAHIR Project Gestion des Projets.</p>
           <a class="btn" href="$invitationUrl">Accepter l'invitation</a>
           <div class="details">
             <p>Si le bouton ne fonctionne pas, vous pouvez utiliser ces informations dans l'application :</p>
@@ -178,11 +178,11 @@ class EmailService {
   static Future<bool> sendInvitationEmailFromInvitation(Invitation invitation) async {
     try {
       final senderEmail = 'echiyahya@live.fr';
-      final senderName = 'AL MAHIR';
-      
+      final senderName = 'AL MAHIR Project';
+
       // Générer le lien avec un schéma personnalisé pour les appareils mobiles
       final invitationLink = 'webxio://invitation?token=${invitation.token}&team=${invitation.teamId}';
-      
+
       // Contenu HTML de l'email avec le nouveau template
       final htmlContent = '''
       <!DOCTYPE html>
@@ -190,7 +190,7 @@ class EmailService {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Invitation à rejoindre ${invitation.teamName} sur AL MAHIR</title>
+        <title>Invitation à rejoindre ${invitation.teamName} sur AL MAHIR Project</title>
         <style>
           body {
             margin: 0;
@@ -271,15 +271,15 @@ class EmailService {
       <body>
         <div class="email-container">
           <div class="content">
-            <h2>Invitation à rejoindre une équipe sur AL MAHIR</h2>
+            <h2>Invitation à rejoindre une équipe sur AL MAHIR Project</h2>
             <p>Bonjour,</p>
-            <p>Vous avez été invité(e) à rejoindre l'équipe <strong>${invitation.teamName ?? 'sur AL MAHIR'}</strong>.</p>
+            <p>Vous avez été invité(e) à rejoindre l'équipe <strong>${invitation.teamName ?? 'sur AL MAHIR Project'}</strong>.</p>
             
             <a class="btn" href="$invitationLink">Accepter l'invitation</a>
             
             <div class="details">
               <p><strong>Si le bouton ne fonctionne pas :</strong></p>
-              <p>Ouvrez l'application AL MAHIR et saisissez le code d'invitation :</p>
+              <p>Ouvrez l'application AL MAHIR Project et saisissez le code d'invitation :</p>
               <div class="code">
                 <strong>${invitation.token}</strong>
               </div>
@@ -292,25 +292,25 @@ class EmailService {
               </ul>
             </div>
             
-            <p class="footer">Ce message a été envoyé automatiquement par AL MAHIR. Merci de ne pas y répondre.</p>
+            <p class="footer">Ce message a été envoyé automatiquement par AL MAHIR Project. Merci de ne pas y répondre.</p>
           </div>
         </div>
       </body>
       </html>
       ''';
-      
+
       // Texte brut de l'email (pour les clients qui ne prennent pas en charge le HTML)
       final textContent = '''
-      Invitation à rejoindre une équipe sur AL MAHIR
+      Invitation à rejoindre une équipe sur AL MAHIR Project
       
       Bonjour,
       
-      Vous avez été invité(e) à rejoindre l'équipe ${invitation.teamName ?? 'sur AL MAHIR'}.
+      Vous avez été invité(e) à rejoindre l'équipe ${invitation.teamName ?? 'sur AL MAHIR Project'}.
       
       Pour accepter l'invitation, veuillez cliquer sur ce lien ou le copier dans votre navigateur :
       $invitationLink
       
-      Si le lien ne fonctionne pas, vous pouvez également ouvrir l'application AL MAHIR et saisir manuellement le code d'invitation suivant :
+      Si le lien ne fonctionne pas, vous pouvez également ouvrir l'application AL MAHIR Project et saisir manuellement le code d'invitation suivant :
       ${invitation.token}
       
       Informations supplémentaires :
@@ -318,9 +318,9 @@ class EmailService {
       - ID de l'équipe: ${invitation.teamId}
       - Cette invitation expirera le ${DateFormat('yyyy-MM-dd à HH:mm').format(invitation.expiresAt ?? DateTime.now().add(const Duration(days: 7)))}
       
-      Ce message a été envoyé automatiquement par AL MAHIR. Merci de ne pas y répondre.
+      Ce message a été envoyé automatiquement par AL MAHIR Project. Merci de ne pas y répondre.
       ''';
-      
+
       // Envoyer l'email
       return sendEmail(
         to: invitation.email,

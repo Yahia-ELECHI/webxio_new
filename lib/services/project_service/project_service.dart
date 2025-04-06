@@ -5,6 +5,9 @@ import '../../models/task_model.dart';
 import '../../models/task_history_model.dart';
 import '../../models/phase_model.dart';
 import '../notification_service.dart';
+import '../cache_service.dart';
+import '../role_service.dart';
+import '../auth_service.dart';
 
 class ProjectService {
   final SupabaseClient _client = SupabaseConfig.client;
@@ -13,17 +16,60 @@ class ProjectService {
   final String _phasesTable = 'phases';
   final String _taskHistoryTable = 'task_history';
   final NotificationService _notificationService = NotificationService();
+  final CacheService _cacheService = CacheService();
+  final RoleService _roleService = RoleService();
+  final AuthService _authService = AuthService();
 
   // Récupérer tous les projets
   Future<List<Project>> getAllProjects() async {
+    // Étape 1: Vérifier si des données en cache sont disponibles
+    List<Project> cachedProjects = [];
+    final cachedData = _cacheService.getCachedProjects();
+    if (cachedData != null) {
+      cachedProjects = cachedData.map((json) => Project.fromJson(json)).toList();
+    }
+    
     try {
-      final response = await _client
-          .from(_projectsTable)
-          .select()
-          .order('created_at', ascending: false);
-      
-      return response.map((json) => Project.fromJson(json)).toList();
+      // Étape 2: Si le cache est vide, attendre la réponse de l'API, sinon retourner le cache immédiatement
+      if (cachedProjects.isEmpty) {
+        final response = await _client
+            .from(_projectsTable)
+            .select()
+            .order('created_at', ascending: false);
+        
+        // Vérifier si planned_budget est présent dans les données brutes
+        for (var projectJson in response) {
+          print('Projet brut depuis Supabase: ${projectJson['name']}, PlannedBudget: ${projectJson['planned_budget']}');
+        }
+        
+        final projects = response.map((json) => Project.fromJson(json)).toList();
+        
+        // Vérifier si planned_budget est correctement converti dans les objets Dart
+        for (var project in projects) {
+          print('Projet: ${project.name}, PlannedBudget: ${project.plannedBudget}');
+        }
+        
+        // Mettre à jour le cache pour les prochaines fois
+        await _cacheService.cacheProjects(response);
+        
+        return projects;
+      } else {
+        // Étape 3: Retourner les données du cache immédiatement
+        
+        // Étape 4: Déclencher une mise à jour en arrière-plan si le cache n'est plus valide
+        if (!_cacheService.areProjectsCacheValid()) {
+          _refreshProjectsInBackground();
+        }
+        
+        return cachedProjects;
+      }
     } catch (e) {
+      // Si une erreur se produit et que nous avons des données en cache, utilisez-les
+      if (cachedProjects.isNotEmpty) {
+        return cachedProjects;
+      }
+      
+      // Sinon, propager l'erreur
       print('Erreur lors de la récupération des projets: $e');
       rethrow;
     }
@@ -96,6 +142,21 @@ class ProjectService {
   // Créer un nouveau projet
   Future<Project> createProject(Project project) async {
     try {
+      // Vérifier si l'utilisateur a la permission de créer un projet
+      final hasPermission = await _roleService.hasPermission(
+        'create_project',
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de créer un projet');
+      }
+
+      // Récupérer l'ID de l'utilisateur
+      final userId = _authService.currentUser?.id;
+      if (userId == null) {
+        throw Exception('Aucun utilisateur connecté');
+      }
+      
       final response = await _client
           .from(_projectsTable)
           .insert(project.toJson())
@@ -103,6 +164,18 @@ class ProjectService {
           .single();
       
       final createdProject = Project.fromJson(response);
+      
+      // Associer automatiquement le projet à l'utilisateur qui l'a créé
+      try {
+        await _client.rpc('auto_assign_project_to_creator', params: {
+          'p_project_id': createdProject.id,
+          'p_user_id': userId,
+        });
+        print('Projet ${createdProject.id} automatiquement associé au créateur $userId');
+      } catch (e) {
+        // Ne pas bloquer la création du projet si l'association échoue
+        print('Erreur lors de l\'association automatique du projet à son créateur: $e');
+      }
       
       // Envoyer une notification pour la création du projet
       await _notifyProjectCreation(createdProject);
@@ -117,6 +190,16 @@ class ProjectService {
   // Mettre à jour un projet
   Future<Project> updateProject(Project project) async {
     try {
+      // Vérifier si l'utilisateur a la permission de mettre à jour le projet
+      final hasPermission = await _roleService.hasPermission(
+        'update_project',
+        projectId: project.id,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de modifier ce projet');
+      }
+      
       // Récupérer l'ancien projet pour comparer le statut
       Project? oldProject;
       try {
@@ -144,25 +227,42 @@ class ProjectService {
         }
       }
       
+      // Vérifier si le budget prévu a changé
+      if (oldProject != null && oldProject.plannedBudget != updatedProject.plannedBudget) {
+        // Forcer l'invalidation du cache des projets pour que les changements soient visibles immédiatement
+        print('Budget prévu modifié pour ${updatedProject.name}: ${oldProject.plannedBudget} → ${updatedProject.plannedBudget}');
+        
+        // Utiliser la nouvelle méthode pour invalider le cache des projets
+        await _cacheService.invalidateProjectsCache();
+      }
+      
       // Vérifier si le budget a changé
       if (oldProject != null && 
           updatedProject.budgetAllocated != null && 
           updatedProject.budgetAllocated! > 0 && 
-          updatedProject.budgetConsumed != null) {
+          updatedProject.plannedBudget != null && updatedProject.plannedBudget! > 0) {
+        final percentage = (updatedProject.budgetAllocated! / updatedProject.plannedBudget!) * 100;
         
-        final percentage = (updatedProject.budgetConsumed! / updatedProject.budgetAllocated!) * 100;
-        
-        // Vérifier si nous avons dépassé des seuils importants (70%, 90%, 100%)
-        if (percentage >= 70) {
-          // Vérifier si nous avons franchi un nouveau seuil
-          final oldPercentage = oldProject.budgetConsumed != null && oldProject.budgetAllocated != null && oldProject.budgetAllocated! > 0
-              ? (oldProject.budgetConsumed! / oldProject.budgetAllocated!) * 100
-              : 0;
-          
-          // Envoyer une notification si nous franchissons un nouveau seuil
-          if ((oldPercentage < 70 && percentage >= 70) || 
-              (oldPercentage < 90 && percentage >= 90) || 
-              (oldPercentage < 100 && percentage >= 100)) {
+        // Si le budget alloué dépasse certains seuils du budget prévu, envoyer une alerte
+        if (percentage > 50 && percentage < 75) {
+          // Alerte à 50% (uniquement si on vient de dépasser ce seuil)
+          if (oldProject.budgetAllocated == null || 
+              oldProject.plannedBudget == null ||
+              (oldProject.budgetAllocated! / oldProject.plannedBudget!) * 100 < 50) {
+            await _notifyProjectBudgetAlert(updatedProject, percentage);
+          }
+        } else if (percentage >= 75 && percentage < 90) {
+          // Alerte à 75% (uniquement si on vient de dépasser ce seuil)
+          if (oldProject.budgetAllocated == null || 
+              oldProject.plannedBudget == null ||
+              (oldProject.budgetAllocated! / oldProject.plannedBudget!) * 100 < 75) {
+            await _notifyProjectBudgetAlert(updatedProject, percentage);
+          }
+        } else if (percentage >= 90) {
+          // Alerte à 90% (uniquement si on vient de dépasser ce seuil)
+          if (oldProject.budgetAllocated == null || 
+              oldProject.plannedBudget == null ||
+              (oldProject.budgetAllocated! / oldProject.plannedBudget!) * 100 < 90) {
             await _notifyProjectBudgetAlert(updatedProject, percentage);
           }
         }
@@ -178,17 +278,35 @@ class ProjectService {
   // Supprimer un projet
   Future<void> deleteProject(String projectId) async {
     try {
-      // Supprimer d'abord toutes les tâches associées au projet
-      await _client
-          .from(_tasksTable)
-          .delete()
-          .eq('project_id', projectId);
+      // Vérifier si l'utilisateur a la permission de supprimer le projet
+      final hasPermission = await _roleService.hasPermission(
+        'delete_project',
+        projectId: projectId,
+      );
       
-      // Puis supprimer le projet
-      await _client
-          .from(_projectsTable)
-          .delete()
-          .eq('id', projectId);
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de supprimer ce projet');
+      }
+      
+      // 1. Récupérer toutes les phases du projet
+      final phases = await getPhasesByProject(projectId);
+      
+      // 2. Pour chaque phase, supprimer toutes les tâches associées
+      for (var phase in phases) {
+        final tasks = await getTasksByPhase(phase.id);
+        for (var task in tasks) {
+          await deleteTask(task.id);
+        }
+        
+        // 3. Supprimer la phase
+        await _client.from(_phasesTable).delete().eq('id', phase.id);
+      }
+      
+      // 4. Supprimer toutes les associations d'équipes au projet
+      await _client.from('team_projects').delete().eq('project_id', projectId);
+      
+      // 5. Supprimer le projet lui-même
+      await _client.from(_projectsTable).delete().eq('id', projectId);
     } catch (e) {
       print('Erreur lors de la suppression du projet: $e');
       rethrow;
@@ -469,6 +587,51 @@ class ProjectService {
     }
   }
 
+  // Récupérer les tâches pour une liste de projets accessibles (respecte RBAC)
+  Future<List<Task>> getTasksForProjects(List<String> projectIds) async {
+    try {
+      if (projectIds.isEmpty) {
+        print('Aucun projet accessible, retourne une liste vide');
+        return [];
+      }
+      
+      print('Récupération des tâches pour les projets: ${projectIds.join(", ")}');
+      
+      // Construire la requête manuellement car la méthode in_ n'est pas disponible
+      // dans cette version de postgrest
+      final query = _client.from(_tasksTable).select();
+      
+      // Si nous avons un seul projet, utiliser eq() directement
+      if (projectIds.length == 1) {
+        final response = await query
+            .eq('project_id', projectIds[0])
+            .order('priority', ascending: false)
+            .order('created_at', ascending: false);
+        
+        print('Nombre de tâches récupérées (projet unique): ${response.length}');
+        return response.map((json) => Task.fromJson(json)).toList();
+      } 
+      // Sinon, utiliser or() pour créer une condition "project_id in (...)"
+      else {
+        // Récupérer toutes les tâches puis filtrer manuellement
+        final allTasksResponse = await query
+            .order('priority', ascending: false)
+            .order('created_at', ascending: false);
+        
+        // Filtrer manuellement par project_id
+        final filteredTasks = allTasksResponse
+            .where((taskJson) => projectIds.contains(taskJson['project_id']))
+            .toList();
+        
+        print('Nombre de tâches récupérées (filtrage manuel): ${filteredTasks.length}');
+        return filteredTasks.map((json) => Task.fromJson(json)).toList();
+      }
+    } catch (e) {
+      print('Erreur lors de la récupération des tâches pour les projets: $e');
+      rethrow;
+    }
+  }
+
   // Récupérer les tâches d'une phase
   Future<List<Task>> getTasksByPhase(String phaseId) async {
     try {
@@ -629,6 +792,169 @@ class ProjectService {
       };
     } catch (e) {
       print('Erreur lors de la récupération des statistiques budgétaires: $e');
+      rethrow;
+    }
+  }
+
+  // Récupérer le budget planifié d'un projet directement depuis la base de données (sans cache)
+  Future<double> getProjectPlannedBudget(String projectId) async {
+    try {
+      // Requête directe à Supabase pour récupérer uniquement le champ planned_budget
+      final response = await _client
+          .from(_projectsTable)
+          .select('planned_budget')
+          .eq('id', projectId)
+          .single();
+      
+      print('Budget planifié récupéré directement depuis Supabase: ${response['planned_budget']}');
+      
+      // Convertir la valeur en double
+      if (response['planned_budget'] != null) {
+        if (response['planned_budget'] is int) {
+          return (response['planned_budget'] as int).toDouble();
+        } else {
+          return response['planned_budget'] as double;
+        }
+      }
+      
+      return 0.0; // Valeur par défaut si le budget n'est pas défini
+    } catch (e) {
+      print('Erreur lors de la récupération du budget planifié: $e');
+      return 0.0; // Valeur par défaut en cas d'erreur
+    }
+  }
+
+  // Méthode pour rafraîchir les données en arrière-plan
+  Future<void> _refreshProjectsInBackground() async {
+    try {
+      final response = await _client
+          .from(_projectsTable)
+          .select()
+          .order('created_at', ascending: false);
+      
+      // Mettre à jour le cache
+      await _cacheService.cacheProjects(response);
+    } catch (e) {
+      // Ignorer les erreurs en arrière-plan, juste logger
+      print('Erreur lors du rafraîchissement des projets en arrière-plan: $e');
+    }
+  }
+
+  // Récupérer les projets accessibles à l'utilisateur selon ses permissions RBAC
+  Future<List<Project>> getAccessibleProjects() async {
+    try {
+      final user = _authService.currentUser;
+      if (user == null) {
+        print('RBAC: Aucun utilisateur connecté pour récupérer les projets accessibles');
+        return [];
+      }
+      
+      // Vérifier si l'utilisateur a la permission globale read_all_projects
+      final hasAllProjectsAccess = await _roleService.hasPermission('read_all_projects');
+      
+      if (hasAllProjectsAccess) {
+        print('RBAC: Utilisateur avec permission read_all_projects, retourne tous les projets');
+        return await getAllProjects();
+      }
+      
+      print('RBAC: Récupération des projets accessibles pour l\'utilisateur: ${user.id}');
+      
+      // 1. Récupérer les projets accessibles via l'ancien field project_id dans user_roles
+      final directProjectsResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('project_id')
+          .eq('user_id', user.id)
+          .not('project_id', 'is', null);
+      
+      final directProjectIds = directProjectsResponse
+          .map<String>((json) => json['project_id'] as String)
+          .toList();
+      
+      // 2. Récupérer les projets accessibles via la nouvelle table user_role_projects
+      final userRolesResponse = await Supabase.instance.client
+          .from('user_roles')
+          .select('id')
+          .eq('user_id', user.id);
+      
+      final userRoleIds = userRolesResponse
+          .map<String>((json) => json['id'] as String)
+          .toList();
+      
+      List<String> linkedProjectIds = [];
+      
+      if (userRoleIds.isNotEmpty) {
+        // Traiter les user_role_ids par lots comme nous le faisons pour les projets
+        const batchSize = 10;
+        for (int i = 0; i < userRoleIds.length; i += batchSize) {
+          final endIdx = (i + batchSize < userRoleIds.length) 
+              ? i + batchSize 
+              : userRoleIds.length;
+          final currentBatch = userRoleIds.sublist(i, endIdx);
+          
+          // Pour chaque lot, récupérer les projets associés
+          for (final roleId in currentBatch) {
+            final roleProjectsResponse = await Supabase.instance.client
+                .from('user_role_projects')
+                .select('project_id')
+                .eq('user_role_id', roleId);
+            
+            final roleProjects = roleProjectsResponse
+                .map<String>((json) => json['project_id'] as String)
+                .toList();
+            
+            linkedProjectIds.addAll(roleProjects);
+          }
+        }
+      }
+      
+      // 3. Combiner tous les IDs de projet (supprimer les doublons avec toSet().toList())
+      final allProjectIds = [...directProjectIds, ...linkedProjectIds].toSet().toList();
+      
+      if (allProjectIds.isEmpty) {
+        print('RBAC: Aucun projet accessible pour l\'utilisateur');
+        return [];
+      }
+      
+      print('RBAC: Projets accessibles IDs: ${allProjectIds.join(", ")}');
+      
+      // Récupérer les détails des projets accessibles
+      List<Project> projects = [];
+      
+      // Traiter les projets par lots pour éviter une requête trop longue
+      const batchSize = 10;
+      for (int i = 0; i < allProjectIds.length; i += batchSize) {
+        final endIdx = (i + batchSize < allProjectIds.length) 
+            ? i + batchSize 
+            : allProjectIds.length;
+        final currentBatch = allProjectIds.sublist(i, endIdx);
+        
+        // Construire une requête manuellement car la méthode in_ n'est pas disponible
+        // dans cette version de postgrest
+        final query = _client.from(_projectsTable).select();
+        
+        // Si nous avons un seul projet, utiliser eq() directement
+        if (currentBatch.length == 1) {
+          final batchResponse = await query
+              .eq('id', currentBatch[0])
+              .order('created_at', ascending: false);
+          
+          projects.addAll(batchResponse.map((json) => Project.fromJson(json)).toList());
+        } else {
+          // Sinon, récupérer tous les projets et filtrer manuellement
+          final allProjectsResponse = await query.order('created_at', ascending: false);
+          
+          final filteredProjects = allProjectsResponse
+              .where((projectJson) => currentBatch.contains(projectJson['id']))
+              .toList();
+          
+          projects.addAll(filteredProjects.map((json) => Project.fromJson(json)).toList());
+        }
+      }
+      
+      print('RBAC: ${projects.length} projets accessibles récupérés');
+      return projects;
+    } catch (e) {
+      print('RBAC: Erreur lors de la récupération des projets accessibles: $e');
       rethrow;
     }
   }

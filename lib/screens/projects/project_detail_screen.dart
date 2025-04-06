@@ -9,8 +9,11 @@ import '../../services/team_service/team_service.dart';
 import '../../services/user_service.dart';
 import '../../services/phase_service/phase_service.dart';
 import '../../services/budget_service.dart';
+import '../../services/role_service.dart';
 import '../../widgets/islamic_patterns.dart';
 import '../../widgets/budget_summary_widget.dart';
+import '../../widgets/rbac_gated_screen.dart';
+import '../../widgets/permission_gated.dart';
 import '../tasks/task_form_screen.dart';
 import '../tasks/task_detail_screen.dart';
 import '../budget/budget_allocation_screen.dart';
@@ -37,6 +40,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   final UserService _userService = UserService();
   final PhaseService _phaseService = PhaseService();
   final BudgetService _budgetService = BudgetService();
+  final RoleService _roleService = RoleService();
   
   Project? _project;
   List<Task> _tasks = [];
@@ -48,17 +52,142 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   bool _isLoadingTeams = true;
   bool _isLoadingPhases = true;
   bool _isLoadingBudget = true;
+  bool _hasProjectAccess = false; 
   String? _errorMessage;
+  
+  // État des phases dépliées/repliées
+  final Map<String, bool> _expandedPhases = {};
+  
+  // Cartes des filtres et recherche par phase - stocke les états de filtre pour chaque phase
+  final Map<String, String> _searchQueries = {};
+  final Map<String, String?> _statusFilters = {};
+  final Map<String, String?> _priorityFilters = {};
+  final Map<String, String?> _sortOptions = {};
+  
+  // Variables pour les tâches sans phase
+  String _noPhaseSearchQuery = '';
+  String? _noPhaseStatusFilter;
+  String? _noPhasePriorityFilter;
+  String? _noPhaseSortOption = 'newest';
+
+  // Map pour stocker les noms d'utilisateurs
   Map<String, String> _userDisplayNames = {};
   List<Team> _assignedTeams = [];
   
-  // Map pour suivre l'état d'expansion de chaque phase (replié/déplié)
-  Map<String, bool> _expandedPhases = {};
-
   @override
   void initState() {
     super.initState();
-    _loadProjectDetails();
+    _checkProjectAccess(); 
+  }
+
+  /// Vérifie si l'utilisateur a accès au projet actuel
+  Future<void> _checkProjectAccess() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Récupérer les rôles de l'utilisateur avec les projets associés
+      final userRolesDetails = await _roleService.getUserRolesDetails();
+      
+      // Vérifier si l'utilisateur a un rôle system_admin (accès global)
+      final isSystemAdmin = userRolesDetails.any((role) => role['role_name'] == 'system_admin');
+      
+      // Si l'utilisateur est admin système, il a un accès complet
+      if (isSystemAdmin) {
+        print('DEBUG: Utilisateur system_admin, accès au projet accordé');
+        setState(() {
+          _hasProjectAccess = true;
+        });
+        _loadProjectDetails(); 
+        return;
+      }
+      
+      // Vérifier si l'utilisateur a une permission directe sur ce projet spécifique
+      final hasProjectPermission = await _roleService.hasPermission(
+        'read_project',
+        projectId: widget.projectId
+      );
+      
+      if (hasProjectPermission) {
+        print('DEBUG: Utilisateur a une permission directe sur ce projet');
+        setState(() {
+          _hasProjectAccess = true;
+        });
+        _loadProjectDetails(); 
+        return;
+      }
+      
+      // Vérifier si l'utilisateur a un rôle associé à ce projet spécifique
+      final hasProjectRole = userRolesDetails.any((role) => 
+        role['project_id'] == widget.projectId
+      );
+      
+      if (hasProjectRole) {
+        print('DEBUG: Utilisateur a un rôle associé à ce projet');
+        setState(() {
+          _hasProjectAccess = true;
+        });
+        _loadProjectDetails(); 
+        return;
+      }
+      
+      // Vérifier si l'utilisateur pourrait accéder via une équipe associée au projet
+      final hasTeamAccess = await _checkTeamProjectAccess();
+      
+      if (hasTeamAccess) {
+        setState(() {
+          _hasProjectAccess = true;
+        });
+        _loadProjectDetails(); 
+        return;
+      }
+      
+      // Aucun accès trouvé
+      setState(() {
+        _hasProjectAccess = false;
+        _isLoading = false;
+      });
+      
+    } catch (e) {
+      print('ERROR: Erreur lors de la vérification de l\'accès au projet: $e');
+      setState(() {
+        _errorMessage = 'Erreur lors de la vérification de l\'accès au projet: $e';
+        _isLoading = false;
+        _hasProjectAccess = false;
+      });
+    }
+  }
+  
+  /// Vérifie si l'utilisateur a accès au projet via une équipe
+  Future<bool> _checkTeamProjectAccess() async {
+    try {
+      // Récupérer les équipes associées au projet
+      final projectTeams = await _teamService.getTeamsByProject(widget.projectId);
+      
+      if (projectTeams.isEmpty) {
+        return false;
+      }
+      
+      // Vérifier pour chaque équipe si l'utilisateur a la permission read_project dans cette équipe
+      for (final team in projectTeams) {
+        final hasTeamPermission = await _roleService.hasPermission(
+          'read_project',
+          teamId: team.id
+        );
+        
+        if (hasTeamPermission) {
+          print('DEBUG: Utilisateur a accès au projet via l\'équipe ${team.id}');
+          return true;
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      print('ERROR: Erreur lors de la vérification de l\'accès via équipes: $e');
+      return false;
+    }
   }
 
   Future<void> _loadProjectDetails() async {
@@ -241,34 +370,106 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     });
   }
 
+  // Méthode pour filtrer les tâches en fonction des critères de recherche et de filtrage
+  List<Task> _filterTasks(List<Task> tasks, String searchQuery, String? statusFilter, String? priorityFilter, String? sortOption) {
+    // Si tous les filtres sont vides, retourner la liste originale
+    if (searchQuery.isEmpty && statusFilter == null && priorityFilter == null && (sortOption == null || sortOption.isEmpty)) {
+      return tasks;
+    }
+    
+    // Filtrer par terme de recherche
+    var filteredTasks = tasks;
+    if (searchQuery.isNotEmpty) {
+      final lowerCaseQuery = searchQuery.toLowerCase();
+      filteredTasks = filteredTasks.where((task) {
+        return task.title.toLowerCase().contains(lowerCaseQuery) || 
+               (task.description?.toLowerCase().contains(lowerCaseQuery) ?? false);
+      }).toList();
+    }
+    
+    // Filtrer par statut
+    if (statusFilter != null && statusFilter.isNotEmpty) {
+      filteredTasks = filteredTasks.where((task) {
+        // Gestion des différentes syntaxes pour "En cours"
+        if (statusFilter == 'in_progress') {
+          return task.status == 'in_progress' || task.status == 'inProgress';
+        }
+        return task.status == statusFilter;
+      }).toList();
+    }
+    
+    // Filtrer par priorité
+    if (priorityFilter != null && priorityFilter.isNotEmpty) {
+      // Conversion de la chaîne de priorité en valeur numérique
+      int? priorityValue;
+      switch (priorityFilter) {
+        case 'low':
+          priorityValue = 0; // TaskPriority.low.value
+          break;
+        case 'medium':
+          priorityValue = 1; // TaskPriority.medium.value
+          break;
+        case 'high':
+          priorityValue = 2; // TaskPriority.high.value
+          break;
+        case 'urgent':
+          priorityValue = 3; // TaskPriority.urgent.value
+          break;
+      }
+      
+      if (priorityValue != null) {
+        filteredTasks = filteredTasks.where((task) => task.priority == priorityValue).toList();
+      }
+    }
+    
+    // Trier les tâches
+    if (sortOption != null && sortOption.isNotEmpty) {
+      switch (sortOption) {
+        case 'newest':
+          filteredTasks.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          break;
+        case 'oldest':
+          filteredTasks.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+          break;
+        case 'deadline_asc':
+          filteredTasks.sort((a, b) {
+            if (a.dueDate == null && b.dueDate == null) return 0;
+            if (a.dueDate == null) return 1;
+            if (b.dueDate == null) return -1;
+            return a.dueDate!.compareTo(b.dueDate!);
+          });
+          break;
+        case 'deadline_desc':
+          filteredTasks.sort((a, b) {
+            if (a.dueDate == null && b.dueDate == null) return 0;
+            if (a.dueDate == null) return 1;
+            if (b.dueDate == null) return -1;
+            return b.dueDate!.compareTo(a.dueDate!);
+          });
+          break;
+      }
+    }
+    
+    return filteredTasks;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: CustomAppBar(
         title: _project?.name ?? 'Détails du projet',
-        showLogo: false,
-        actions: [
-          if (_project != null)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Actualiser',
-              onPressed: () {
-                setState(() {
-                  _isLoading = true;
-                });
-                _loadProjectDetails();
-              },
-            ),
-          if (_project != null)
-            IconButton(
+        actions: _hasProjectAccess && _project != null ? [
+          // Action d'édition (si l'utilisateur a la permission)
+          PermissionGated(
+            permissionName: 'update_project',
+            projectId: widget.projectId,
+            child: IconButton(
               icon: const Icon(Icons.edit),
               onPressed: () async {
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => ProjectFormScreen(
-                      project: _project,
-                    ),
+                    builder: (context) => ProjectFormScreen(project: _project),
                   ),
                 );
                 if (result == true) {
@@ -276,22 +477,32 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 }
               },
             ),
-          if (_project != null)
-            IconButton(
+          ),
+          // Action de suppression (si l'utilisateur a la permission)
+          PermissionGated(
+            permissionName: 'delete_project',
+            projectId: widget.projectId,
+            child: IconButton(
               icon: const Icon(Icons.delete),
               onPressed: () {
                 _showDeleteConfirmationDialog();
               },
             ),
-        ],
+          ),
+        ] : null,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _project == null
-              ? const Center(child: Text('Projet non trouvé'))
-              : _buildBody(),
-      floatingActionButton: _project != null
-          ? FloatingActionButton(
+          : _errorMessage != null
+              ? _buildErrorWidget()
+              : !_hasProjectAccess
+                  ? _buildAccessDeniedWidget()
+                  : _buildProjectDetails(),
+      floatingActionButton: _hasProjectAccess && _project != null
+        ? PermissionGated(
+            permissionName: 'create_phase',
+            projectId: widget.projectId,
+            child: FloatingActionButton(
               onPressed: () async {
                 final result = await Navigator.push(
                   context,
@@ -307,12 +518,81 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               },
               tooltip: 'Ajouter une phase',
               child: const Icon(Icons.add),
-            )
-          : null,
+            ),
+          )
+        : null,
     );
   }
-
-  Widget _buildBody() {
+  
+  Widget _buildAccessDeniedWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.lock,
+            size: 64,
+            color: Colors.grey,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Accès refusé',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              'Vous n\'avez pas l\'autorisation d\'accéder à ce projet.\nContactez un administrateur si vous pensez qu\'il s\'agit d\'une erreur.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Retour'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.error_outline,
+            color: Colors.red,
+            size: 48,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Erreur',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              _errorMessage ?? 'Une erreur inconnue est survenue',
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _checkProjectAccess,
+            child: const Text('Réessayer'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildProjectDetails() {
     return RefreshIndicator(
       onRefresh: () async {
         _loadProjectDetails();
@@ -546,22 +826,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
             ),
             if (!_isLoadingPhases && _projectPhases.isEmpty)
-              TextButton.icon(
-                onPressed: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => PhasesScreen(
-                        project: _project!,
+              PermissionGated(
+                permissionName: 'create_phase',
+                projectId: widget.projectId,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PhasesScreen(
+                          project: _project!,
+                        ),
                       ),
-                    ),
-                  );
-                  if (result == true) {
-                    _loadProjectPhases();
-                  }
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('Ajouter une phase'),
+                    );
+                    if (result == true) {
+                      _loadProjectPhases();
+                    }
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Ajouter une phase'),
+                ),
               ),
           ],
         ),
@@ -748,22 +1032,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       });
                     },
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 20),
-                    onPressed: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PhasesScreen(
-                            project: _project!,
-                            initialPhase: phase,
+                  PermissionGated(
+                    permissionName: 'update_phase',
+                    projectId: phase.projectId,
+                    child: IconButton(
+                      icon: const Icon(Icons.edit, size: 20),
+                      onPressed: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => PhasesScreen(
+                              project: _project!,
+                              initialPhase: phase,
+                            ),
                           ),
-                        ),
-                      );
-                      if (result == true) {
-                        _loadProjectPhases();
-                      }
-                    },
+                        );
+                        if (result == true) {
+                          _loadProjectPhases();
+                        }
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -872,7 +1160,31 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Widget _buildTasksSection(Phase phase) {
-    final tasks = _tasks.where((task) => task.phaseId == phase.id).toList();
+    // Récupérer toutes les tâches de cette phase
+    final allPhaseTasks = _tasks.where((task) => task.phaseId == phase.id).toList();
+    
+    // Initialiser les filtres pour cette phase si nécessaire
+    if (!_searchQueries.containsKey(phase.id)) {
+      _searchQueries[phase.id] = '';
+    }
+    if (!_statusFilters.containsKey(phase.id)) {
+      _statusFilters[phase.id] = null;
+    }
+    if (!_priorityFilters.containsKey(phase.id)) {
+      _priorityFilters[phase.id] = null;
+    }
+    if (!_sortOptions.containsKey(phase.id)) {
+      _sortOptions[phase.id] = 'newest';
+    }
+    
+    // Appliquer les filtres et le tri
+    final tasks = _filterTasks(
+      allPhaseTasks,
+      _searchQueries[phase.id] ?? '',
+      _statusFilters[phase.id],
+      _priorityFilters[phase.id],
+      _sortOptions[phase.id],
+    );
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -881,7 +1193,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Tâches (${tasks.length})',
+              'Tâches (${allPhaseTasks.length})',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -889,6 +1201,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ),
             TextButton.icon(
               onPressed: () async {
+                // Vérifier la permission avant d'ouvrir le formulaire d'ajout de tâche
+                final hasPermission = await _roleService.hasPermission('create_task', projectId: _project!.id);
+                if (!hasPermission) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Vous n\'avez pas la permission de créer une tâche'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                  return;
+                }
+                
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -904,8 +1230,221 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             ),
           ],
         ),
+        
+        // Barre de recherche
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: TextField(
+            decoration: InputDecoration(
+              hintText: 'Rechercher des tâches...',
+              prefixIcon: const Icon(Icons.search),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8.0),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            onChanged: (value) {
+              setState(() {
+                _searchQueries[phase.id] = value;
+              });
+            },
+            controller: TextEditingController(text: _searchQueries[phase.id]),
+          ),
+        ),
+        
+        // Options de filtrage et tri
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                // Filtre par statut
+                Container(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: PopupMenuButton<String?>(
+                    initialValue: _statusFilters[phase.id],
+                    onSelected: (value) {
+                      setState(() {
+                        _statusFilters[phase.id] = value == 'all' ? null : value;
+                      });
+                    },
+                    itemBuilder: (BuildContext context) => [
+                      const PopupMenuItem<String?>(
+                        value: null,
+                        child: Text('Tous les statuts'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'todo',
+                        child: Text('À faire'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'in_progress',
+                        child: Text('En cours'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'review',
+                        child: Text('En révision'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'completed',
+                        child: Text('Terminée'),
+                      ),
+                    ],
+                    child: Chip(
+                      label: Text(
+                        _statusFilters[phase.id] == null
+                            ? 'Statut'
+                            : _statusFilters[phase.id] == 'todo'
+                                ? 'À faire'
+                                : _statusFilters[phase.id] == 'in_progress'
+                                    ? 'En cours'
+                                    : _statusFilters[phase.id] == 'review'
+                                        ? 'En révision'
+                                        : 'Terminée',
+                      ),
+                      deleteIcon: _statusFilters[phase.id] == null
+                          ? null
+                          : const Icon(Icons.close, size: 18),
+                      onDeleted: _statusFilters[phase.id] == null
+                          ? null
+                          : () {
+                              setState(() {
+                                _statusFilters[phase.id] = null;
+                              });
+                            },
+                    ),
+                  ),
+                ),
+                
+                // Filtre par priorité
+                Container(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: PopupMenuButton<String?>(
+                    initialValue: _priorityFilters[phase.id],
+                    onSelected: (value) {
+                      setState(() {
+                        _priorityFilters[phase.id] = value == 'all' ? null : value;
+                      });
+                    },
+                    itemBuilder: (BuildContext context) => [
+                      const PopupMenuItem<String?>(
+                        value: null,
+                        child: Text('Toutes les priorités'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'low',
+                        child: Text('Basse'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'medium',
+                        child: Text('Moyenne'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'high',
+                        child: Text('Haute'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'urgent',
+                        child: Text('Urgente'),
+                      ),
+                    ],
+                    child: Chip(
+                      label: Text(
+                        _priorityFilters[phase.id] == null
+                            ? 'Priorité'
+                            : _priorityFilters[phase.id] == 'low'
+                                ? 'Basse'
+                                : _priorityFilters[phase.id] == 'medium'
+                                    ? 'Moyenne'
+                                    : _priorityFilters[phase.id] == 'high'
+                                        ? 'Haute'
+                                        : 'Urgente',
+                      ),
+                      deleteIcon: _priorityFilters[phase.id] == null
+                          ? null
+                          : const Icon(Icons.close, size: 18),
+                      onDeleted: _priorityFilters[phase.id] == null
+                          ? null
+                          : () {
+                              setState(() {
+                                _priorityFilters[phase.id] = null;
+                              });
+                            },
+                    ),
+                  ),
+                ),
+                
+                // Options de tri
+                Container(
+                  child: PopupMenuButton<String>(
+                    initialValue: _sortOptions[phase.id],
+                    onSelected: (value) {
+                      setState(() {
+                        _sortOptions[phase.id] = value;
+                      });
+                    },
+                    itemBuilder: (BuildContext context) => [
+                      const PopupMenuItem<String>(
+                        value: 'newest',
+                        child: Text('Plus récent d\'abord'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'oldest',
+                        child: Text('Plus ancien d\'abord'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'deadline_asc',
+                        child: Text('Échéance (croissant)'),
+                      ),
+                      const PopupMenuItem<String>(
+                        value: 'deadline_desc',
+                        child: Text('Échéance (décroissant)'),
+                      ),
+                    ],
+                    child: Chip(
+                      label: Text(
+                        _sortOptions[phase.id] == 'newest'
+                            ? 'Plus récent'
+                            : _sortOptions[phase.id] == 'oldest'
+                                ? 'Plus ancien'
+                                : _sortOptions[phase.id] == 'deadline_asc'
+                                    ? 'Échéance ↑'
+                                    : 'Échéance ↓',
+                      ),
+                    ),
+                  ),
+                ),
+                
+                // Bouton pour réinitialiser les filtres
+                if (_searchQueries[phase.id]!.isNotEmpty ||
+                    _statusFilters[phase.id] != null ||
+                    _priorityFilters[phase.id] != null ||
+                    _sortOptions[phase.id] != 'newest')
+                  Container(
+                    padding: const EdgeInsets.only(left: 8.0),
+                    child: TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _searchQueries[phase.id] = '';
+                          _statusFilters[phase.id] = null;
+                          _priorityFilters[phase.id] = null;
+                          _sortOptions[phase.id] = 'newest';
+                        });
+                      },
+                      child: const Text('Réinitialiser'),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        
         const SizedBox(height: 8),
-        if (tasks.isEmpty)
+        if (allPhaseTasks.isEmpty)
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -915,6 +1454,23 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             child: const Center(
               child: Text(
                 'Aucune tâche pour cette phase',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          )
+        else if (tasks.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: Text(
+                'Aucune tâche ne correspond aux critères de recherche',
                 style: TextStyle(
                   color: Colors.grey,
                   fontStyle: FontStyle.italic,
@@ -937,11 +1493,21 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Widget _buildTasksWithoutPhaseSection() {
-    final tasksWithoutPhase = _tasks.where((task) => task.phaseId == null).toList();
+    // Récupérer toutes les tâches sans phase
+    final allTasksWithoutPhase = _tasks.where((task) => task.phaseId == null).toList();
     
-    if (tasksWithoutPhase.isEmpty) {
+    if (allTasksWithoutPhase.isEmpty) {
       return const SizedBox.shrink();
     }
+    
+    // Appliquer les filtres et le tri
+    final tasksWithoutPhase = _filterTasks(
+      allTasksWithoutPhase,
+      _noPhaseSearchQuery,
+      _noPhaseStatusFilter,
+      _noPhasePriorityFilter,
+      _noPhaseSortOption,
+    );
     
     return Container(
       padding: const EdgeInsets.all(16),
@@ -956,21 +1522,29 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.task_alt, size: 20, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Tâches sans phase (${tasksWithoutPhase.length})',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+              Text(
+                'Tâches sans phase (${allTasksWithoutPhase.length})',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               TextButton.icon(
                 onPressed: () async {
+                  // Vérifier la permission avant d'ouvrir le formulaire d'ajout de tâche
+                  final hasPermission = await _roleService.hasPermission('create_task', projectId: _project!.id);
+                  if (!hasPermission) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Vous n\'avez pas la permission de créer une tâche'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                    return;
+                  }
+                  
                   final result = await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -986,16 +1560,246 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: tasksWithoutPhase.length,
-            itemBuilder: (context, index) {
-              final task = tasksWithoutPhase[index];
-              return _buildTaskCard(task);
-            },
+          
+          // Barre de recherche
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'Rechercher des tâches...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8.0),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _noPhaseSearchQuery = value;
+                });
+              },
+              controller: TextEditingController(text: _noPhaseSearchQuery),
+            ),
           ),
+          
+          // Options de filtrage et tri
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  // Filtre par statut
+                  Container(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: PopupMenuButton<String?>(
+                      initialValue: _noPhaseStatusFilter,
+                      onSelected: (value) {
+                        setState(() {
+                          _noPhaseStatusFilter = value == 'all' ? null : value;
+                        });
+                      },
+                      itemBuilder: (BuildContext context) => [
+                        const PopupMenuItem<String?>(
+                          value: null,
+                          child: Text('Tous les statuts'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'todo',
+                          child: Text('À faire'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'in_progress',
+                          child: Text('En cours'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'review',
+                          child: Text('En révision'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'completed',
+                          child: Text('Terminée'),
+                        ),
+                      ],
+                      child: Chip(
+                        label: Text(
+                          _noPhaseStatusFilter == null
+                              ? 'Statut'
+                              : _noPhaseStatusFilter == 'todo'
+                                  ? 'À faire'
+                                  : _noPhaseStatusFilter == 'in_progress'
+                                      ? 'En cours'
+                                      : _noPhaseStatusFilter == 'review'
+                                          ? 'En révision'
+                                          : 'Terminée',
+                        ),
+                        deleteIcon: _noPhaseStatusFilter == null
+                            ? null
+                            : const Icon(Icons.close, size: 18),
+                        onDeleted: _noPhaseStatusFilter == null
+                            ? null
+                            : () {
+                                setState(() {
+                                  _noPhaseStatusFilter = null;
+                                });
+                              },
+                      ),
+                    ),
+                  ),
+                  
+                  // Filtre par priorité
+                  Container(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: PopupMenuButton<String?>(
+                      initialValue: _noPhasePriorityFilter,
+                      onSelected: (value) {
+                        setState(() {
+                          _noPhasePriorityFilter = value == 'all' ? null : value;
+                        });
+                      },
+                      itemBuilder: (BuildContext context) => [
+                        const PopupMenuItem<String?>(
+                          value: null,
+                          child: Text('Toutes les priorités'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'low',
+                          child: Text('Basse'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'medium',
+                          child: Text('Moyenne'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'high',
+                          child: Text('Haute'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'urgent',
+                          child: Text('Urgente'),
+                        ),
+                      ],
+                      child: Chip(
+                        label: Text(
+                          _noPhasePriorityFilter == null
+                              ? 'Priorité'
+                              : _noPhasePriorityFilter == 'low'
+                                  ? 'Basse'
+                                  : _noPhasePriorityFilter == 'medium'
+                                      ? 'Moyenne'
+                                      : _noPhasePriorityFilter == 'high'
+                                          ? 'Haute'
+                                          : 'Urgente',
+                        ),
+                        deleteIcon: _noPhasePriorityFilter == null
+                            ? null
+                            : const Icon(Icons.close, size: 18),
+                        onDeleted: _noPhasePriorityFilter == null
+                            ? null
+                            : () {
+                                setState(() {
+                                  _noPhasePriorityFilter = null;
+                                });
+                              },
+                      ),
+                    ),
+                  ),
+                  
+                  // Options de tri
+                  Container(
+                    child: PopupMenuButton<String>(
+                      initialValue: _noPhaseSortOption,
+                      onSelected: (value) {
+                        setState(() {
+                          _noPhaseSortOption = value;
+                        });
+                      },
+                      itemBuilder: (BuildContext context) => [
+                        const PopupMenuItem<String>(
+                          value: 'newest',
+                          child: Text('Plus récent d\'abord'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'oldest',
+                          child: Text('Plus ancien d\'abord'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'deadline_asc',
+                          child: Text('Échéance (croissant)'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'deadline_desc',
+                          child: Text('Échéance (décroissant)'),
+                        ),
+                      ],
+                      child: Chip(
+                        label: Text(
+                          _noPhaseSortOption == 'newest'
+                              ? 'Plus récent'
+                              : _noPhaseSortOption == 'oldest'
+                                  ? 'Plus ancien'
+                                  : _noPhaseSortOption == 'deadline_asc'
+                                      ? 'Échéance ↑'
+                                      : 'Échéance ↓',
+                        ),
+                      ),
+                    ),
+                  ),
+                  
+                  // Bouton pour réinitialiser les filtres
+                  if (_noPhaseSearchQuery.isNotEmpty ||
+                      _noPhaseStatusFilter != null ||
+                      _noPhasePriorityFilter != null ||
+                      _noPhaseSortOption != 'newest')
+                    Container(
+                      padding: const EdgeInsets.only(left: 8.0),
+                      child: TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _noPhaseSearchQuery = '';
+                            _noPhaseStatusFilter = null;
+                            _noPhasePriorityFilter = null;
+                            _noPhaseSortOption = 'newest';
+                          });
+                        },
+                        child: const Text('Réinitialiser'),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 8),
+          if (tasksWithoutPhase.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Center(
+                child: Text(
+                  'Aucune tâche ne correspond aux critères de recherche',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            )
+          else
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: tasksWithoutPhase.length,
+              itemBuilder: (context, index) {
+                return _buildTaskCard(tasksWithoutPhase[index]);
+              },
+            ),
         ],
       ),
     );
@@ -1017,6 +1821,20 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ),
       child: InkWell(
         onTap: () async {
+          // Vérifier la permission avant d'ouvrir les détails de la tâche
+          final hasPermission = await _roleService.hasPermission('read_task', projectId: task.projectId);
+          if (!hasPermission) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Vous n\'avez pas la permission de voir cette tâche'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+            return;
+          }
+          
           final result = await Navigator.push(
             context,
             MaterialPageRoute(

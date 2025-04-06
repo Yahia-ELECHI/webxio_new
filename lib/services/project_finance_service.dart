@@ -4,12 +4,14 @@ import '../models/project_transaction_model.dart';
 import '../models/project_model.dart';
 import 'project_service/project_service.dart';
 import 'notification_service.dart';
+import 'role_service.dart';
 
 class ProjectFinanceService {
   final _supabase = Supabase.instance.client;
   final _uuid = Uuid();
   final ProjectService _projectService = ProjectService();
   final NotificationService _notificationService = NotificationService();
+  final RoleService _roleService = RoleService();
   
   // Exposer le client Supabase pour permettre l'accès à l'utilisateur courant
   SupabaseClient get supabaseClient => _supabase;
@@ -362,6 +364,63 @@ class ProjectFinanceService {
     }
   }
 
+  // Récupérer toutes les transactions accessibles à l'utilisateur selon ses permissions RBAC
+  Future<List<ProjectTransaction>> getAccessibleTransactions() async {
+    try {
+      print('RBAC: Récupération des transactions accessibles à l\'utilisateur');
+      final userId = _supabase.auth.currentUser!.id;
+      
+      // Récupérer les projets accessibles via RBAC
+      final accessibleProjects = await _projectService.getAccessibleProjects();
+      if (accessibleProjects.isEmpty) {
+        print('RBAC: Aucun projet accessible pour l\'utilisateur');
+        return [];
+      }
+      
+      print('RBAC: ${accessibleProjects.length} projets accessibles trouvés');
+      final List<String> projectIds = accessibleProjects.map((p) => p.id).toList();
+      
+      // Récupérer les transactions pour ces projets
+      final response = await _supabase
+          .from('budget_transactions')
+          .select()
+          .inFilter('project_id', projectIds)
+          .order('transaction_date', ascending: false);
+      
+      final List<ProjectTransaction> transactions = [];
+      
+      // Récupérer les noms des projets pour chaque transaction
+      for (final json in response) {
+        if (json['project_id'] != null) {
+          // Trouver le projet dans la liste des projets accessibles
+          final matchingProject = accessibleProjects.firstWhere(
+            (p) => p.id == json['project_id'],
+            orElse: () => Project(
+              id: json['project_id'],
+              name: 'Projet inconnu',
+              description: '',
+              status: 'active',
+              createdBy: '',
+              createdAt: DateTime.now(),
+            ),
+          );
+          
+          json['project_name'] = matchingProject.name;
+        } else {
+          json['project_name'] = 'Projet non spécifié';
+        }
+        
+        transactions.add(ProjectTransaction.fromJson(json));
+      }
+      
+      print('RBAC: ${transactions.length} transactions accessibles récupérées');
+      return transactions;
+    } catch (e) {
+      print('Erreur lors de la récupération des transactions accessibles: $e');
+      return [];
+    }
+  }
+
   // Créer une nouvelle transaction de projet
   Future<ProjectTransaction> createTransaction(
     String projectId,
@@ -371,15 +430,26 @@ class ProjectFinanceService {
     String description,
     DateTime transactionDate,
     String category,
-    String? subcategory,
-  ) async {
+    String? subcategory, {
+    String? notes, // Ajout du paramètre notes optionnel
+  }) async {
     try {
-      final userId = _supabase.auth.currentUser!.id;
-      final transactionId = _uuid.v4();
-      final now = DateTime.now().toUtc();
+      // Vérifier si l'utilisateur a la permission de créer une transaction
+      final hasPermission = await _roleService.hasPermission(
+        'create_transaction',
+        projectId: projectId,
+      );
       
-      // Récupérer les noms des entités associées
-      String projectName = 'Projet non spécifié';
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de créer une transaction pour ce projet');
+      }
+      
+      final userId = _supabase.auth.currentUser!.id;
+      final now = DateTime.now().toUtc();
+      final transactionId = _uuid.v4();
+      
+      // Récupérer des informations supplémentaires pour l'affichage
+      String projectName = 'Projet inconnu';
       String? phaseName;
       String? taskName;
       
@@ -468,6 +538,7 @@ class ProjectFinanceService {
         taskName: taskName,
         amount: amount, // Le montant peut être positif ou négatif
         description: description,
+        notes: notes, // Ajout des notes
         transactionDate: transactionDate,
         transactionType: transactionType, // 'income' ou 'expense'
         category: category, // Anciennement subcategory
@@ -487,6 +558,7 @@ class ProjectFinanceService {
         'task_id': jsonData['task_id'],
         'amount': jsonData['amount'],
         'description': jsonData['description'],
+        'notes': jsonData['notes'], // Ajout des notes dans les données
         'transaction_date': jsonData['transaction_date'],
         'transaction_type': jsonData['transaction_type'], // Mise à jour
         'category': jsonData['category'],
@@ -508,6 +580,16 @@ class ProjectFinanceService {
   // Mettre à jour une transaction
   Future<void> updateTransaction(ProjectTransaction transaction) async {
     try {
+      // Vérifier si l'utilisateur a la permission de mettre à jour une transaction
+      final hasPermission = await _roleService.hasPermission(
+        'update_transaction',
+        projectId: transaction.projectId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de modifier cette transaction');
+      }
+      
       final userId = _supabase.auth.currentUser!.id;
       final now = DateTime.now().toUtc();
       
@@ -560,6 +642,7 @@ class ProjectFinanceService {
         'task_id': transaction.taskId,
         'amount': transaction.amount,
         'description': transaction.description,
+        'notes': transaction.notes, // Ajout des notes dans la mise à jour
         'transaction_date': transaction.transactionDate.toIso8601String(),
         'transaction_type': transaction.transactionType, // Mise à jour
         'category': transaction.category,
@@ -588,6 +671,21 @@ class ProjectFinanceService {
           .single();
       
       final projectId = transactionResponse['project_id'] as String?;
+      
+      if (projectId == null) {
+        throw Exception('Transaction invalide : projet non spécifié');
+      }
+      
+      // Vérifier si l'utilisateur a la permission de supprimer une transaction
+      final hasPermission = await _roleService.hasPermission(
+        'delete_transaction', 
+        projectId: projectId,
+      );
+      
+      if (!hasPermission) {
+        throw Exception('Vous n\'avez pas l\'autorisation de supprimer cette transaction');
+      }
+      
       final amount = transactionResponse['amount'] as double;
       final category = transactionResponse['transaction_type'] as String;
       

@@ -10,10 +10,13 @@ class ProjectTransaction {
   final String? taskName;     
   final double amount;
   final String description;
+  final String? notes; 
   final DateTime transactionDate;
   final String transactionType; 
   final String category; 
-  final String? subcategory; 
+  final String? subcategory;
+  final String? categoryId;
+  final String? subcategoryId;
   final DateTime createdAt;
   final DateTime? updatedAt;
   final String createdBy;
@@ -28,10 +31,13 @@ class ProjectTransaction {
     this.taskName,
     required this.amount,
     required this.description,
+    this.notes, 
     required this.transactionDate,
     required this.transactionType,
     required this.category,
     this.subcategory,
+    this.categoryId,
+    this.subcategoryId,
     required this.createdAt,
     this.updatedAt,
     required this.createdBy,
@@ -51,10 +57,13 @@ class ProjectTransaction {
           ? (json['amount'] as int).toDouble()
           : json['amount'] as double,
       description: json['description'] as String,
+      notes: json['notes'] as String?, 
       transactionDate: DateTime.parse(json['transaction_date'] as String),
       transactionType: json['transaction_type'] as String, 
       category: json['category'] as String,
       subcategory: json['subcategory'] as String?,
+      categoryId: json['category_id'] as String?,
+      subcategoryId: json['subcategory_id'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -75,10 +84,13 @@ class ProjectTransaction {
       'task_name': taskName,
       'amount': amount,
       'description': description,
+      'notes': notes, 
       'transaction_date': transactionDate.toIso8601String(),
       'transaction_type': transactionType, 
       'category': category,
       'subcategory': subcategory,
+      'category_id': categoryId,
+      'subcategory_id': subcategoryId,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
       'created_by': createdBy,
@@ -96,10 +108,13 @@ class ProjectTransaction {
     String? taskName,
     double? amount,
     String? description,
+    String? notes, 
     DateTime? transactionDate,
     String? transactionType, 
     String? category,
     String? subcategory,
+    String? categoryId,
+    String? subcategoryId,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdBy,
@@ -114,10 +129,13 @@ class ProjectTransaction {
       taskName: taskName ?? this.taskName,
       amount: amount ?? this.amount,
       description: description ?? this.description,
+      notes: notes ?? this.notes, 
       transactionDate: transactionDate ?? this.transactionDate,
       transactionType: transactionType ?? this.transactionType, 
       category: category ?? this.category,
       subcategory: subcategory ?? this.subcategory,
+      categoryId: categoryId ?? this.categoryId,
+      subcategoryId: subcategoryId ?? this.subcategoryId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
@@ -163,10 +181,13 @@ class ProjectTransaction {
           ? (json['amount'] as int).toDouble()
           : json['amount'] as double,
       description: json['description'] as String,
+      notes: json['notes'] as String?, 
       transactionDate: DateTime.parse(json['transaction_date'] as String),
       transactionType: json['transaction_type'] as String, 
       category: json['category'] as String,
       subcategory: json['subcategory'] as String?,
+      categoryId: json['category_id'] as String?,
+      subcategoryId: json['subcategory_id'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)

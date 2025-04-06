@@ -155,17 +155,23 @@ class _CagnotteWebViewState extends State<CagnotteWebView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  widget.title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
                       icon: const Icon(Icons.fullscreen, size: 20),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                       onPressed: () {
                         if (_controller != null && !_isLoading) {
                           Navigator.of(context).push(
@@ -188,13 +194,23 @@ class _CagnotteWebViewState extends State<CagnotteWebView> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.settings, size: 20),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                       onPressed: _showConfigDialog,
                       tooltip: 'Configurer l\'URL',
                     ),
                     if (widget.onSeeAllPressed != null)
                       TextButton(
                         onPressed: widget.onSeeAllPressed,
-                        child: const Text('Voir tout'),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          minimumSize: const Size(60, 36),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          'Voir tout',
+                          style: TextStyle(fontSize: 12),
+                        ),
                       ),
                   ],
                 ),
@@ -219,70 +235,69 @@ class _CagnotteWebViewState extends State<CagnotteWebView> {
   }
 
   Widget _buildWebViewContent() {
-    // Version adaptative de l'interface en fonction de la plateforme
-    // Plus robuste et optimisée pour tous les environnements
-    bool isEmulator = false;
-    try {
-      // Détection des environnements d'émulateur (approx.)
-      isEmulator = !kReleaseMode && !Platform.isIOS && Platform.isAndroid;
-    } catch (e) {
-      // Fallback si la détection échoue
-      isEmulator = false;
-    }
-
     if (_controller == null) {
       return const Center(
         child: CircularProgressIndicator(),
       );
     }
 
-    if (isEmulator) {
-      // Version optimisée pour l'émulateur et les tests avec souris
-      return Column(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                NotificationListener<ScrollNotification>(
-                  onNotification: (_) => true,  // Bloquer la propagation des notifications
-                  child: SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: MediaQuery.of(context).size.height * 0.8, // Augmenter la hauteur pour afficher plus de contenu
-                      child: WebViewWidget(controller: _controller!),
-                    ),
+    // Approche unifiée pour tous les environnements
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Ajuster la WebView pour s'adapter à l'espace disponible
+        return Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: constraints.maxWidth,
+                height: constraints.maxHeight,
+                child: WebViewWidget(
+                  controller: _controller!,
+                ),
+              ),
+            ),
+            if (_isLoading)
+              const Center(
+                child: CircularProgressIndicator(),
+              ),
+            // Overlay pour améliorer l'interaction avec la WebView
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: 30,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withOpacity(0.1),
+                      Colors.transparent,
+                    ],
                   ),
                 ),
-                if (_isLoading)
-                  const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-              ],
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(top: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          // Guide d'utilisation avec interface adaptée à l'émulateur
-          
-        ],
-      );
-    } else {
-      // Version optimisée pour les appareils réels avec écran tactile
-      return Stack(
-        children: [
-          GestureDetector(
-            // Capture des gestes tactiles
-            onVerticalDragUpdate: (_) {},
-            onHorizontalDragUpdate: (_) {},
-            behavior: HitTestBehavior.translucent,
-            child: WebViewWidget(controller: _controller!),
-          ),
-          if (_isLoading)
-            const Center(
-              child: CircularProgressIndicator(),
-            ),
-        ],
-      );
-    }
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildUrlConfigForm() {

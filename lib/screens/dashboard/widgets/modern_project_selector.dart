@@ -291,9 +291,13 @@ class ProjectSelectorButton extends StatelessWidget {
     return GestureDetector(
       onTap: onPressed,
       child: Container(
-        width: 180, 
+        // Utiliser une largeur adaptative au lieu d'une largeur fixe
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.45, // 45% de la largeur de l'écran
+          minWidth: 120, // Largeur minimale
+        ),
         height: 40,  
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             colors: [

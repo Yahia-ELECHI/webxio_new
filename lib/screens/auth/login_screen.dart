@@ -16,11 +16,11 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController(text: 'test2@example.com'); 
-  final _passwordController = TextEditingController(text: 'password123'); 
-  
+  final _emailController = TextEditingController(text: '');
+  final _passwordController = TextEditingController(text: '');
+
   final AuthService _authService = AuthService();
-  
+
   bool _isLoading = false;
   String? _errorMessage;
   bool _obscurePassword = true;
@@ -52,7 +52,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (response.user != null) {
           // Ne pas utiliser pop puis pushReplacement, utiliser seulement pushReplacement
           // Navigator.pop(context, true); <-- Supprimer cette ligne qui cause le problème
-          
+
           // Naviguer vers le dashboard (index 0) au lieu de l'écran des projets
           Navigator.pushReplacement(
             context,
@@ -98,7 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-          
+
           // Motif islamique en arrière-plan
           Positioned.fill(
             child: Opacity(
@@ -108,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-          
+
           // Contenu principal
           SafeArea(
             child: Center(
@@ -127,9 +127,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         animationDuration: Duration(milliseconds: 1200),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 32),
-                    
+
                     // Titre
                     const Text(
                       'Connexion',
@@ -140,21 +140,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    
+
                     const SizedBox(height: 16),
-                    
+
                     // Description
                     Text(
-                      'Bienvenue sur AL MAHIR. Veuillez vous connecter pour continuer.',
+                      'Bienvenue sur AL MAHIR Project. Veuillez vous connecter pour continuer.',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.7),
                         fontSize: 14,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    
+
                     const SizedBox(height: 40),
-                    
+
                     // Formulaire de connexion
                     Container(
                       padding: const EdgeInsets.all(24),
@@ -214,9 +214,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 return null;
                               },
                             ),
-                            
+
                             const SizedBox(height: 20),
-                            
+
                             // Mot de passe
                             TextFormField(
                               controller: _passwordController,
@@ -261,7 +261,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 return null;
                               },
                             ),
-                            
+
                             // Lien mot de passe oublié
                             Align(
                               alignment: Alignment.centerRight,
@@ -292,9 +292,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                             ),
-                            
+
                             const SizedBox(height: 24),
-                            
+
                             // Message d'erreur
                             if (_errorMessage != null)
                               Container(
@@ -313,9 +313,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   textAlign: TextAlign.center,
                                 ),
                               ),
-                            
+
                             if (_errorMessage != null) const SizedBox(height: 24),
-                            
+
                             // Bouton de connexion
                             ElevatedButton(
                               onPressed: _isLoading ? null : _login,
@@ -350,9 +350,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     // Lien d'inscription
                     TextButton(
                       onPressed: () {

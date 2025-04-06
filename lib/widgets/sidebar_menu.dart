@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
+import '../providers/role_provider.dart';
+import '../widgets/permission_gated.dart';
 import '../screens/projects/projects_screen.dart';
 import '../screens/auth/profile_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/teams/teams_screen.dart';
+import '../screens/admin/roles_admin_screen.dart';
 import 'islamic_patterns.dart';
 
 class SidebarMenu extends StatefulWidget {
@@ -155,6 +159,23 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
                                   fontSize: 12,
                                 ),
                               ),
+                              if (isAuthenticated) ...[
+                                const SizedBox(height: 4),
+                                FutureBuilder<List<String>>(
+                                  future: Provider.of<RoleProvider>(context, listen: false).getUserRoles(),
+                                  builder: (context, snapshot) {
+                                    final roles = snapshot.data ?? ['Chargement...'];
+                                    return Text(
+                                      'Rôle: ${roles.join(", ")}',
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.7),
+                                        fontSize: 12,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -203,6 +224,53 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
                         icon: Icons.attach_money,
                         title: 'Finances',
                         index: 5,
+                      ),
+                      
+                      const Divider(
+                        color: Colors.white24,
+                        height: 16,
+                        thickness: 1,
+                        indent: 16,
+                        endIndent: 16,
+                      ),
+                      
+                      // Administration des rôles (afficher seulement pour les administrateurs)
+                      FutureBuilder<bool>(
+                        future: () async {
+                          print('Vérification des permissions pour Admin des Rôles');
+                          
+                          // Récupérer les informations complètes de user_roles pour debug
+                          final roleProvider = Provider.of<RoleProvider>(context, listen: false);
+                          final userRolesDetails = await roleProvider.getUserRolesDetails();
+                          print('DEBUG sidebar: Détails des rôles utilisateur: $userRolesDetails');
+                          
+                          // Extraire le team_id du rôle system_admin s'il existe
+                          String? teamId;
+                          for (var role in userRolesDetails) {
+                            if (role['role_name'] == 'system_admin') {
+                              teamId = role['team_id'];
+                              break;
+                            }
+                          }
+                          
+                          print('DEBUG sidebar: Utilisation du team_id: $teamId pour la vérification');
+                          final result = await roleProvider.hasPermission('manage_roles', teamId: teamId);
+                          print('User has manage_roles permission: $result');
+                          return result;
+                        }(),
+                        builder: (context, snapshot) {
+                          final bool hasPermission = snapshot.data ?? false;
+                          if (!hasPermission) {
+                            return const SizedBox.shrink();
+                          }
+                          
+                          return _buildMenuItem(
+                            icon: Icons.admin_panel_settings,
+                            title: 'Admin des Rôles',
+                            index: 10,
+                            isAdmin: true,
+                          );
+                        },
                       ),
                       const Divider(
                         color: Colors.white24,
@@ -303,13 +371,23 @@ class _SidebarMenuState extends State<SidebarMenu> with SingleTickerProviderStat
     required IconData icon,
     required String title,
     required int index,
+    bool isAdmin = false,
   }) {
     final isSelected = widget.selectedIndex == index;
     
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: InkWell(
-        onTap: () => widget.onItemSelected(index),
+        onTap: () {
+          if (isAdmin) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const RolesAdminScreen()),
+            );
+          } else {
+            widget.onItemSelected(index);
+          }
+        },
         borderRadius: BorderRadius.circular(8),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),

@@ -12,21 +12,21 @@ enum LogoAnimationType {
   none,
 }
 
-/// Widget réutilisable pour afficher le logo AL MAHIR avec différentes options
+/// Widget réutilisable pour afficher le logo AL MAHIR Project avec différentes options
 /// d'animation et de style.
 class LogoWidget extends StatelessWidget {
   /// Utiliser la version dorée (true) ou blanche (false) du logo
   final bool isGold;
-  
+
   /// Taille du logo (la largeur et la hauteur seront identiques)
   final double size;
-  
+
   /// Type d'animation à appliquer au logo
   final LogoAnimationType animationType;
-  
+
   /// Durée de l'animation (si applicable)
   final Duration animationDuration;
-  
+
   /// Si vrai, l'animation se répète indéfiniment
   final bool repeat;
 
@@ -41,17 +41,17 @@ class LogoWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String logoPath = isGold 
+    final String logoPath = isGold
         ? 'assets/logo/almahir_gold.svg'
         : 'assets/logo/almahir_blanc.svg';
-        
+
     Widget logo = SvgPicture.asset(
       logoPath,
       width: size,
       height: size,
       fit: BoxFit.contain,
     );
-    
+
     // Appliquer l'animation sélectionnée
     switch (animationType) {
       case LogoAnimationType.fade:
@@ -69,7 +69,7 @@ class LogoWidget extends StatelessWidget {
         return logo;
     }
   }
-  
+
   /// Animation de fondu
   Widget _applyFadeAnimation(Widget logo) {
     return logo
@@ -83,7 +83,7 @@ class LogoWidget extends StatelessWidget {
         if (repeat) controller.repeat();
       });
   }
-  
+
   /// Animation de pulsation (zoom in/out)
   Widget _applyPulseAnimation(Widget logo) {
     return logo
@@ -106,7 +106,7 @@ class LogoWidget extends StatelessWidget {
         curve: Curves.easeInOut,
       );
   }
-  
+
   /// Animation de flottement (mouvement vertical subtil)
   Widget _applyFloatAnimation(Widget logo) {
     return logo
@@ -129,7 +129,7 @@ class LogoWidget extends StatelessWidget {
         curve: Curves.easeInOut,
       );
   }
-  
+
   /// Animation de rotation
   Widget _applyRotateAnimation(Widget logo) {
     return logo
@@ -159,7 +159,7 @@ class LogoWidget extends StatelessWidget {
         curve: Curves.easeInOut,
       );
   }
-  
+
   /// Animation de glissement (entrée par le côté)
   Widget _applySlideInAnimation(Widget logo) {
     return logo

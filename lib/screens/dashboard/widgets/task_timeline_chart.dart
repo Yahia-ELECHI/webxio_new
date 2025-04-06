@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/dashboard_chart_models.dart';
+import '../../../models/task_model.dart';
 
 class TaskTimelineChart extends StatelessWidget {
   final List<TaskTimelineData> data;
@@ -177,7 +179,7 @@ class TaskTimelineChart extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          task.status,
+                          TaskStatus.fromValue(task.status).displayName,
                           style: TextStyle(
                             fontSize: 10,
                             color: _getStatusColor(task.status),
@@ -220,11 +222,11 @@ class TaskTimelineChart extends StatelessWidget {
       case 0: // Basse
         return Colors.green;
       case 1: // Moyenne
-        return Colors.orange;
+        return Colors.blue;
       case 2: // Haute
-        return Colors.red;
+        return Colors.orange;
       case 3: // Urgente
-        return Colors.purple;
+        return Colors.red;
       default:
         return Colors.grey;
     }
@@ -237,12 +239,15 @@ class TaskTimelineChart extends StatelessWidget {
         return Colors.grey;
       case 'en cours':
       case 'in progress':
+      case 'inprogress':
+      case 'in_progress':
+      case 'inProgress':
         return Colors.blue;
       case 'terminée':
       case 'completed':
         return Colors.green;
-      case 'en attente':
-      case 'on hold':
+      case 'en revision':
+      case 'review':
         return Colors.orange;
       case 'annulée':
       case 'cancelled':

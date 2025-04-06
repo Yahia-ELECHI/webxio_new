@@ -8,6 +8,8 @@ import 'package:uuid/uuid.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'providers/role_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/projects/projects_screen.dart';
@@ -21,10 +23,12 @@ import 'screens/teams/invitation_acceptance_screen.dart';
 import 'screens/budget/finance_dashboard_screen.dart';
 import 'screens/finance/project_finance_dashboard_screen.dart'; // Nouvel emplacement plus approprié
 import 'screens/notifications/notifications_screen.dart';
+import 'screens/budget/categories/transaction_categories_screen.dart'; // Import pour l'écran de catégories
 import 'widgets/sidebar_menu.dart';
 import 'widgets/islamic_patterns.dart';
 import 'widgets/notification_popup.dart';
 import 'services/auth_service.dart';
+import 'services/cache_service.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:io';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -41,22 +45,25 @@ void main() async {
     print('FlutterError: ${details.exception}');
     print('Stack trace: ${details.stack}');
   };
-  
+
   // Initialisation Flutter
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialiser les données de locale
   await initializeDateFormatting('fr_FR', null);
-  
+
+  // Initialiser le service de cache
+  await CacheService().initialize();
+
   // Charger les variables d'environnement
   await dotenv.load(fileName: ".env");
-  
+
   // Lancer l'application sans attendre Supabase
   runApp(const MyApp());
-  
+
   // Initialiser Supabase en arrière-plan
   _initializeSupabase();
-  
+
   // Gestion des liens profonds (deep links)
   _handleDeepLinks();
 }
@@ -67,12 +74,12 @@ Future<void> _initializeSupabase() async {
     print("Tentative d'initialisation de Supabase...");
     final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
     final supabaseKey = dotenv.env['SUPABASE_KEY'] ?? '';
-    
+
     if (supabaseUrl.isEmpty || supabaseKey.isEmpty) {
       print("Erreur: URL ou clé Supabase manquante dans le fichier .env");
       return;
     }
-    
+
     await Supabase.initialize(
       url: supabaseUrl,
       anonKey: supabaseKey,
@@ -93,7 +100,7 @@ Future<void> _handleDeepLinks() async {
       print("Lien initial: $initialLink");
       _processLink(initialLink.toString());
     }
-    
+
     // Écouter les liens dynamiques (DynamicLinks)
     appLinks.uriLinkStream.listen((link) {
       print("Lien reçu: $link");
@@ -110,15 +117,15 @@ Future<void> _handleDeepLinks() async {
 void _processLink(String link) {
   try {
     final uri = Uri.parse(link);
-    
+
     if (uri.host == 'invitation' || uri.path == '/invitation') {
       // Extraire les paramètres
       final token = uri.queryParameters['token'] ?? '';
       final teamId = uri.queryParameters['team'] ?? '';
-      
+
       if (token.isNotEmpty && teamId.isNotEmpty) {
         print("Invitation reçue - Token: $token, Team ID: $teamId");
-        
+
         // Accéder au navigateur global
         navigatorKey.currentState?.pushNamed(
           '/invitation',
@@ -139,78 +146,84 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'AL MAHIR',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1F4E5F),
-          primary: const Color(0xFF1F4E5F),
-          secondary: const Color(0xFFE57373),
-        ),
-        useMaterial3: true,
-        fontFamily: 'Roboto',
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1F4E5F),
-          foregroundColor: Colors.white,
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1F4E5F),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => RoleProvider()),
+      ],
+      child: MaterialApp(
+        title: 'AL MAHIR Project',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF1F4E5F),
+            primary: const Color(0xFF1F4E5F),
+            secondary: const Color(0xFFE57373),
+          ),
+          useMaterial3: true,
+          fontFamily: 'Roboto',
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF1F4E5F),
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1F4E5F),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: Colors.grey[100],
+            border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.grey[100],
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(
-              color: Color(0xFF1F4E5F),
-              width: 2,
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(
+                color: Color(0xFF1F4E5F),
+                width: 2,
+              ),
             ),
           ),
         ),
-      ),
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [
-        Locale('fr', 'FR'),
-      ],
-      locale: const Locale('fr', 'FR'),
-      routes: {
-        '/': (context) => const SplashScreen(),
-        '/login': (context) => const LoginScreen(),
-        '/register': (context) => const RegisterScreen(),
-        '/home': (context) => const MainAppScreen(),
-        '/profile': (context) => const ProfileScreen(),
-        '/notifications': (context) => const NotificationsScreen(),
-        '/invitation': (context) {
-          // Récupérer les paramètres d'URL pour l'invitation
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, String>?;
-          final token = args?['token'] ?? Uri.base.queryParameters['token'] ?? '';
-          final teamId = args?['team'] ?? Uri.base.queryParameters['team'] ?? '';
-          
-          // Rediriger vers l'écran d'acceptation d'invitation
-          return InvitationAcceptanceScreen(
-            token: token,
-            teamId: teamId,
-          );
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('fr', 'FR'),
+        ],
+        locale: const Locale('fr', 'FR'),
+        routes: {
+          '/': (context) => const SplashScreen(),
+          '/login': (context) => const LoginScreen(),
+          '/register': (context) => const RegisterScreen(),
+          '/home': (context) => const MainAppScreen(),
+          '/profile': (context) => const ProfileScreen(),
+          '/notifications': (context) => const NotificationsScreen(),
+          '/transaction-categories': (context) => const TransactionCategoriesScreen(),
+          '/invitation': (context) {
+            // Récupérer les paramètres d'URL pour l'invitation
+            final args = ModalRoute.of(context)!.settings.arguments as Map<String, String>?;
+            final token = args?['token'] ?? Uri.base.queryParameters['token'] ?? '';
+            final teamId = args?['team'] ?? Uri.base.queryParameters['team'] ?? '';
+
+            // Rediriger vers l'écran d'acceptation d'invitation
+            return InvitationAcceptanceScreen(
+              token: token,
+              teamId: teamId,
+            );
+          },
         },
-      },
-      initialRoute: '/',
-      navigatorKey: navigatorKey, // Ajouter la clé de navigateur globale
+        initialRoute: '/',
+        navigatorKey: navigatorKey, // Ajouter la clé de navigateur globale
+      ),
     );
   }
 }
@@ -287,11 +300,11 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   repeat: true,
                   animationDuration: Duration(milliseconds: 1500),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
+
                 const Text(
-                  'AL MAHIR',
+                  'AL MAHIR Project',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
@@ -321,7 +334,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
 class MainAppScreen extends StatefulWidget {
   final int initialIndex;
-  
+
   const MainAppScreen({
     super.key,
     this.initialIndex = 0,
@@ -334,33 +347,33 @@ class MainAppScreen extends StatefulWidget {
 class _MainAppScreenState extends State<MainAppScreen> {
   final AuthService _authService = AuthService();
   late int _selectedIndex;
-  
+
   final List<Widget> _screens = [
     const DashboardScreen(),
     const ProjectsScreen(),
     const TeamsScreen(),
-    const CalendarScreen(),
-    const StatisticsScreen(),
-    const ProjectFinanceDashboardScreen(), // Nouveau tableau de bord financier avec sélecteur moderne
+    const CalendarScreenWrapper(), // Utilisation du wrapper pour éviter le flash d'écran d'accès refusé
+    const StatisticsScreenWrapper(), // Utilisation du wrapper pour les statistiques
+    const ProjectFinanceDashboardScreenWrapper(), // Utilisation du wrapper pour les finances
     const ProfileScreen(),
   ];
-  
+
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final user = _authService.currentUser;
     final isAuthenticated = user != null;
     final isSmallScreen = MediaQuery.of(context).size.width < 600;
-    
+
     if (!isAuthenticated) {
       return const LoginScreen();
     }
-    
+
     return Scaffold(
       body: isSmallScreen
           ? _screens[_selectedIndex]
@@ -375,7 +388,7 @@ class _MainAppScreenState extends State<MainAppScreen> {
                   },
                   selectedIndex: _selectedIndex,
                 ),
-                
+
                 // Contenu principal
                 Expanded(
                   child: _screens[_selectedIndex],
@@ -440,36 +453,45 @@ class _MainAppScreenState extends State<MainAppScreen> {
             )
           : null,
       appBar: isSmallScreen
-          ? AppBar(
-              title: Transform.translate(
-                offset: const Offset(-35, 0),
-                child: SvgPicture.asset(
-                  'assets/logo/almahir_blanc_texte_v2.svg',
-                  height: 150,
-                  width: 180,
-                ),
-              ),
-              centerTitle: false,
-              backgroundColor: const Color(0xFF1F4E5F),
-              foregroundColor: Colors.white,
-              flexibleSpace: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Opacity(
-                      opacity: 0.09,
-                      child: IslamicPatternBackground(
-                        color: const Color.fromARGB(198, 255, 217, 0), // Couleur dorée
+          ? PreferredSize(
+              preferredSize: const Size.fromHeight(64.0),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+
+                  return AppBar(
+                    toolbarHeight: 60, // Augmenter la hauteur de la barre d'outils
+                    title: Padding(
+                      padding: const EdgeInsets.only(left: 8.0), // Ajouter un peu d'espace à gauche
+                      child: SvgPicture.asset(
+                        'assets/logo/almahir_blanc_texte_v2.svg',
+                        height: 150,
+                        width: 180,
+                        fit: BoxFit.contain,
                       ),
                     ),
-                  ),
-                ],
+                    titleSpacing: 0,
+                    centerTitle: false,
+                    leadingWidth: 36,
+                    backgroundColor: const Color(0xFF1F4E5F),
+                    foregroundColor: Colors.white,
+                    flexibleSpace: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: Opacity(
+                            opacity: 0.09,
+                            child: IslamicPatternBackground(
+                              color: const Color.fromARGB(198, 255, 217, 0),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      NotificationIcon(),
+                    ],
+                  );
+                }
               ),
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 25.0), // Ajouter de l'espace à droite
-                  child: NotificationIcon(),
-                ),
-              ],
             )
           : null,
     );
