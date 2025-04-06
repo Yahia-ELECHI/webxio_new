@@ -1,4 +1,4 @@
-// Fichier de constantes pour l'application AL MAHIR GESTION DES PROJETS
+// Fichier de constantes pour l'application AL MAHIR Project GESTION DES PROJETS
 
 import 'package:flutter/material.dart';
 
@@ -35,7 +35,7 @@ class BudgetCategories {
   static const String formation = 'Formation';
   static const String marketing = 'Marketing';
   static const String autres = 'Autres';
-  
+
   static List<String> getAllCategories() {
     return [
       personnelInternal,
@@ -48,7 +48,7 @@ class BudgetCategories {
       autres,
     ];
   }
-  
+
   static Color getCategoryColor(String category) {
     switch (category) {
       case personnelInternal:
@@ -71,7 +71,7 @@ class BudgetCategories {
         return Colors.grey;
     }
   }
-  
+
   static IconData getCategoryIcon(String category) {
     switch (category) {
       case personnelInternal:
@@ -108,7 +108,7 @@ class AppMessages {
   static const String errorNetwork = 'Erreur de connexion. Veuillez vérifier votre connexion internet.';
   static const String errorAuthentication = 'Erreur d\'authentification. Veuillez vous reconnecter.';
   static const String errorPermission = 'Vous n\'avez pas les permissions nécessaires pour cette action.';
-  
+
   static const String successSave = 'Enregistré avec succès.';
   static const String successDelete = 'Supprimé avec succès.';
   static const String successCreate = 'Créé avec succès.';

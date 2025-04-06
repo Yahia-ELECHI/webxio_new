@@ -1,4 +1,4 @@
--- Script d'implémentation RBAC pour WebXIO (AL MAHIR)
+-- Script d'implémentation RBAC pour WebXIO (AL MAHIR Project)
 -- À exécuter dans l'éditeur SQL de Supabase Cloud
 
 BEGIN;
@@ -127,14 +127,14 @@ ON CONFLICT (name) DO NOTHING;
 
 -- Admin système (toutes les permissions)
 INSERT INTO "public"."role_permissions" ("role_id", "permission_id")
-SELECT 
+SELECT
     (SELECT id FROM "public"."roles" WHERE name = 'system_admin'),
     id
 FROM "public"."permissions";
 
 -- Chef de projet
 INSERT INTO "public"."role_permissions" ("role_id", "permission_id")
-SELECT 
+SELECT
     (SELECT id FROM "public"."roles" WHERE name = 'project_manager'),
     id
 FROM "public"."permissions"
@@ -149,7 +149,7 @@ WHERE name IN (
 
 -- Membre d'équipe
 INSERT INTO "public"."role_permissions" ("role_id", "permission_id")
-SELECT 
+SELECT
     (SELECT id FROM "public"."roles" WHERE name = 'team_member'),
     id
 FROM "public"."permissions"
@@ -163,7 +163,7 @@ WHERE name IN (
 
 -- Responsable financier
 INSERT INTO "public"."role_permissions" ("role_id", "permission_id")
-SELECT 
+SELECT
     (SELECT id FROM "public"."roles" WHERE name = 'finance_manager'),
     id
 FROM "public"."permissions"
@@ -171,7 +171,7 @@ WHERE name IN (
     'read_project',
     'read_phase',
     'read_task',
-    'create_transaction', 'read_transaction', 'read_all_transactions', 
+    'create_transaction', 'read_transaction', 'read_all_transactions',
     'update_transaction', 'approve_transaction', 'delete_transaction', 'manage_budget',
     'read_team',
     'read_profile', 'update_own_profile'
@@ -179,7 +179,7 @@ WHERE name IN (
 
 -- Observateur
 INSERT INTO "public"."role_permissions" ("role_id", "permission_id")
-SELECT 
+SELECT
     (SELECT id FROM "public"."roles" WHERE name = 'observer'),
     id
 FROM "public"."permissions"
@@ -197,7 +197,7 @@ WHERE name IN (
 
 -- Fonction pour vérifier si un utilisateur a une permission
 CREATE OR REPLACE FUNCTION public.user_has_permission(
-    p_user_id uuid, 
+    p_user_id uuid,
     p_permission_name text,
     p_team_id uuid DEFAULT NULL,
     p_project_id uuid DEFAULT NULL
@@ -223,7 +223,7 @@ BEGIN
             OR (ur.team_id = p_team_id AND ur.project_id = p_project_id AND p_team_id IS NOT NULL AND p_project_id IS NOT NULL)
         )
     ) INTO has_perm;
-    
+
     -- Si pas de permission trouvée, vérifier les rôles team_members legacy
     IF NOT has_perm AND p_team_id IS NOT NULL THEN
         SELECT EXISTS (
@@ -236,7 +236,7 @@ BEGIN
                 (tm.role = 'admin')
                 -- Les membres ont des permissions limitées (à adapter selon vos besoins)
                 OR (tm.role = 'member' AND p_permission_name IN (
-                    'read_project', 'read_phase', 'read_task', 'update_task', 
+                    'read_project', 'read_phase', 'read_task', 'update_task',
                     'change_task_status', 'create_task'
                 ))
                 -- Les invités ont très peu de permissions
@@ -246,7 +246,7 @@ BEGIN
             )
         ) INTO has_perm;
     END IF;
-    
+
     RETURN has_perm;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -258,12 +258,12 @@ BEGIN
     IF user_has_permission(auth.uid(), 'read_all_projects') THEN
         RETURN true;
     END IF;
-    
+
     -- Chef de projet ou autre rôle avec permission spécifique pour ce projet
     IF user_has_permission(auth.uid(), 'read_project', NULL, project_id) THEN
         RETURN true;
     END IF;
-    
+
     -- Membre d'équipe associée au projet
     RETURN EXISTS (
         SELECT 1 FROM "public"."team_projects" tp
@@ -282,12 +282,12 @@ BEGIN
     IF user_has_permission(auth.uid(), 'update_project') THEN
         RETURN true;
     END IF;
-    
+
     -- Chef de projet pour ce projet spécifique
     IF user_has_permission(auth.uid(), 'update_project', NULL, project_id) THEN
         RETURN true;
     END IF;
-    
+
     -- Admin d'équipe associée au projet
     RETURN EXISTS (
         SELECT 1 FROM "public"."team_projects" tp
@@ -361,8 +361,8 @@ CREATE POLICY "Users can view their roles" ON "public"."user_roles"
         user_has_permission(auth.uid(), 'manage_users') OR
         (project_id IS NOT NULL AND can_access_project(project_id)) OR
         (team_id IS NOT NULL AND EXISTS (
-            SELECT 1 FROM "public"."team_members" 
-            WHERE team_id = "public"."user_roles".team_id 
+            SELECT 1 FROM "public"."team_members"
+            WHERE team_id = "public"."user_roles".team_id
             AND user_id = auth.uid()
             AND status = 'active'
         ))
@@ -396,8 +396,8 @@ CREATE POLICY "Users can insert projects based on RBAC" ON "public"."projects"
 
 -- Conversion des administrateurs d'équipe en chefs de projet
 INSERT INTO "public"."user_roles" (user_id, role_id, team_id)
-SELECT 
-    tm.user_id, 
+SELECT
+    tm.user_id,
     (SELECT id FROM "public"."roles" WHERE name = 'project_manager'),
     tm.team_id
 FROM "public"."team_members" tm
@@ -406,8 +406,8 @@ ON CONFLICT ON CONSTRAINT user_roles_unique_context DO NOTHING;
 
 -- Conversion des membres d'équipe en membres d'équipe RBAC
 INSERT INTO "public"."user_roles" (user_id, role_id, team_id)
-SELECT 
-    tm.user_id, 
+SELECT
+    tm.user_id,
     (SELECT id FROM "public"."roles" WHERE name = 'team_member'),
     tm.team_id
 FROM "public"."team_members" tm
@@ -416,8 +416,8 @@ ON CONFLICT ON CONSTRAINT user_roles_unique_context DO NOTHING;
 
 -- Conversion des invités d'équipe en observateurs
 INSERT INTO "public"."user_roles" (user_id, role_id, team_id)
-SELECT 
-    tm.user_id, 
+SELECT
+    tm.user_id,
     (SELECT id FROM "public"."roles" WHERE name = 'observer'),
     tm.team_id
 FROM "public"."team_members" tm
@@ -426,7 +426,7 @@ ON CONFLICT ON CONSTRAINT user_roles_unique_context DO NOTHING;
 
 -- Attribution du rôle système admin au premier utilisateur (optionnel)
 INSERT INTO "public"."user_roles" (user_id, role_id)
-SELECT 
+SELECT
     id,
     (SELECT id FROM "public"."roles" WHERE name = 'system_admin')
 FROM auth.users

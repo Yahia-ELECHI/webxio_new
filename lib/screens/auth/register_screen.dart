@@ -18,9 +18,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _displayNameController = TextEditingController();
-  
+
   final AuthService _authService = AuthService();
-  
+
   bool _isLoading = false;
   String? _errorMessage;
   bool _obscurePassword = true;
@@ -99,7 +99,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             ),
           ),
-          
+
           // Motif islamique en arrière-plan
           Positioned.fill(
             child: Opacity(
@@ -109,7 +109,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             ),
           ),
-          
+
           // Contenu principal
           SafeArea(
             child: Center(
@@ -119,7 +119,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 16),
-                    
+
                     // Logo
                     Center(
                       child: const LogoWidget(
@@ -129,9 +129,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         animationDuration: Duration(milliseconds: 1200),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     // Titre
                     const Text(
                       'Inscription',
@@ -142,21 +142,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    
+
                     const SizedBox(height: 16),
-                    
+
                     // Description
                     Text(
-                      'Créez votre compte pour accéder à AL MAHIR',
+                      'Créez votre compte pour accéder à AL MAHIR Project',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.7),
                         fontSize: 14,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    
+
                     const SizedBox(height: 40),
-                    
+
                     // Formulaire d'inscription
                     Container(
                       padding: const EdgeInsets.all(24),
@@ -212,7 +212,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 return null;
                               },
                             ),
-                            
+
                             const SizedBox(height: 20),
 
                             // Email
@@ -251,9 +251,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 return null;
                               },
                             ),
-                            
+
                             const SizedBox(height: 20),
-                            
+
                             // Mot de passe
                             TextFormField(
                               controller: _passwordController,
@@ -301,9 +301,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 return null;
                               },
                             ),
-                            
+
                             const SizedBox(height: 20),
-                            
+
                             // Confirmer mot de passe
                             TextFormField(
                               controller: _confirmPasswordController,
@@ -351,9 +351,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 return null;
                               },
                             ),
-                            
+
                             const SizedBox(height: 24),
-                            
+
                             // Message d'erreur
                             if (_errorMessage != null)
                               Container(
@@ -372,9 +372,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   textAlign: TextAlign.center,
                                 ),
                               ),
-                            
+
                             if (_errorMessage != null) const SizedBox(height: 24),
-                            
+
                             // Bouton d'inscription
                             ElevatedButton(
                               onPressed: _isLoading ? null : _register,
@@ -409,9 +409,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     // Lien de connexion
                     TextButton(
                       onPressed: () {
@@ -428,7 +428,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
                     ),
-                    
+
                     // Bouton de retour
                     IconButton(
                       onPressed: () {

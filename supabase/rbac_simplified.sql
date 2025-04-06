@@ -1,4 +1,4 @@
--- Migration vers un système RBAC unifié pour WebXIO (AL MAHIR)
+-- Migration vers un système RBAC unifié pour WebXIO (AL MAHIR Project)
 -- Ce script supprime la dépendance au système legacy de team_members et améliore la fonction user_has_permission
 
 -- Étape 0: Créer d'abord la table de logs RBAC
@@ -22,7 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_rbac_logs_timestamp ON public.rbac_logs(log_times
 
 -- Étape 1: Améliorer la fonction user_has_permission
 CREATE OR REPLACE FUNCTION public.user_has_permission(
-    p_user_id uuid, 
+    p_user_id uuid,
     p_permission_name text,
     p_team_id uuid DEFAULT NULL,
     p_project_id uuid DEFAULT NULL
@@ -41,7 +41,7 @@ BEGIN
     FROM user_roles ur
     JOIN roles r ON ur.role_id = r.id
     WHERE ur.user_id = p_user_id;
-    
+
     -- Les admins système ont automatiquement toutes les permissions
     IF user_roles IS NOT NULL AND 'system_admin' = ANY(user_roles) THEN
         RETURN true;
@@ -63,7 +63,7 @@ BEGIN
               (p_team_id IS NOT NULL AND ur.team_id = p_team_id)
           )
     ) INTO has_team_perm;
-    
+
     -- Cas 5 (NOUVEAU): Vérification directe sur un projet spécifique
     -- Ce cas gère les rôles assignés directement à un projet sans passer par une équipe
     IF p_project_id IS NOT NULL THEN
@@ -76,16 +76,16 @@ BEGIN
               AND p.name = p_permission_name
               AND ur.project_id = p_project_id
         ) INTO has_direct_project_perm;
-        
+
         -- Journaliser cette vérification
         INSERT INTO rbac_logs (
             user_id, permission_name, team_id, project_id, result, log_timestamp, debug_info
         ) VALUES (
-            p_user_id, 
-            'CHECK_DIRECT_PROJECT_PERMISSION', 
-            NULL, 
-            p_project_id, 
-            has_direct_project_perm, 
+            p_user_id,
+            'CHECK_DIRECT_PROJECT_PERMISSION',
+            NULL,
+            p_project_id,
+            has_direct_project_perm,
             NOW(),
             jsonb_build_object(
                 'permission', p_permission_name,
@@ -94,14 +94,14 @@ BEGIN
             )
         );
     END IF;
-    
+
     -- Cas 3 & 4: Vérification via projets liés à l'équipe spécifiée
     IF NOT has_team_perm AND p_team_id IS NOT NULL THEN
         -- Récupérer les projets de l'équipe
         SELECT array_agg(tp.project_id) INTO v_project_ids
         FROM team_projects tp
         WHERE tp.team_id = p_team_id;
-        
+
         -- Récupérer les projets sur lesquels l'utilisateur a un rôle
         WITH user_project_roles AS (
             SELECT ur.project_id, r.name as role_name
@@ -114,14 +114,14 @@ BEGIN
             'team_projects', v_project_ids,
             'user_project_roles', (SELECT jsonb_agg(row_to_json(upr)) FROM user_project_roles upr)
         ) INTO v_debug_info;
-        
+
         -- Insérer des informations de débogage
         INSERT INTO rbac_logs (
             user_id, permission_name, team_id, project_id, result, log_timestamp, debug_info
         ) VALUES (
             p_user_id, 'DEBUG_PROJ_TEAM_RELATION', p_team_id, NULL, false, NOW(), v_debug_info
         );
-        
+
         -- Vérification spécifique pour le cas 4: projet lié à l'équipe
         WITH team_related_projects AS (
             -- Obtenir tous les projets liés à cette équipe
@@ -138,16 +138,16 @@ BEGIN
               AND p.name = p_permission_name
         )
         SELECT has_permission INTO has_project_perm FROM user_permissions;
-        
+
         -- Journalisation du résultat de la vérification via projet
         INSERT INTO rbac_logs (
             user_id, permission_name, team_id, project_id, result, log_timestamp, debug_info
         ) VALUES (
-            p_user_id, 
-            'CHECK_PERMISSION_VIA_PROJECT', 
-            p_team_id, 
-            NULL, 
-            has_project_perm, 
+            p_user_id,
+            'CHECK_PERMISSION_VIA_PROJECT',
+            p_team_id,
+            NULL,
+            has_project_perm,
             NOW(),
             jsonb_build_object(
                 'permission', p_permission_name,
@@ -156,16 +156,16 @@ BEGIN
             )
         );
     END IF;
-    
+
     -- Combiner les résultats (ajout de has_direct_project_perm)
     has_perm := has_team_perm OR has_project_perm OR has_direct_project_perm;
 
     -- Journaliser le résultat final
     INSERT INTO rbac_logs (
-        user_id, 
-        permission_name, 
-        team_id, 
-        project_id, 
+        user_id,
+        permission_name,
+        team_id,
+        project_id,
         result,
         log_timestamp,
         debug_info
@@ -206,7 +206,7 @@ $$ LANGUAGE plpgsql;
 -- Étape 2: Créer des vues et fonctions utilitaires pour faciliter la gestion
 -- Vue pour consulter facilement les permissions disponibles pour les utilisateurs
 CREATE OR REPLACE VIEW user_permissions_view AS
-SELECT 
+SELECT
     u.id AS user_id,
     u.email,
     p.display_name AS user_name,
@@ -219,21 +219,21 @@ SELECT
     t.id AS team_id,
     pr.name AS project_name,
     pr.id AS project_id
-FROM 
+FROM
     auth.users u
-JOIN 
+JOIN
     profiles p ON u.id = p.id
-JOIN 
+JOIN
     user_roles ur ON u.id = ur.user_id
-JOIN 
+JOIN
     roles r ON ur.role_id = r.id
-JOIN 
+JOIN
     role_permissions rp ON r.id = rp.role_id
-JOIN 
+JOIN
     permissions perm ON rp.permission_id = perm.id
-LEFT JOIN 
+LEFT JOIN
     teams t ON ur.team_id = t.id
-LEFT JOIN 
+LEFT JOIN
     projects pr ON ur.project_id = pr.id;
 
 -- Fonction helper pour attribuer un rôle à un utilisateur
@@ -248,18 +248,18 @@ DECLARE
 BEGIN
     -- Récupérer l'ID du rôle
     SELECT id INTO v_role_id FROM roles WHERE name = p_role_name;
-    
+
     IF v_role_id IS NULL THEN
         RAISE EXCEPTION 'Rôle non trouvé: %', p_role_name;
     END IF;
-    
+
     -- Insérer le rôle utilisateur
     INSERT INTO user_roles (user_id, role_id, team_id, project_id)
     VALUES (p_user_id, v_role_id, p_team_id, p_project_id)
-    ON CONFLICT (user_id, role_id, COALESCE(team_id, '00000000-0000-0000-0000-000000000000'::uuid), 
+    ON CONFLICT (user_id, role_id, COALESCE(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
                 COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid))
     DO NOTHING;
-    
+
     RETURN true;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -272,12 +272,12 @@ DECLARE
     v_role_id uuid;
 BEGIN
     -- Parcourir tous les membres d'équipe actifs
-    FOR rec IN 
-        SELECT 
+    FOR rec IN
+        SELECT
             user_id, team_id, role
-        FROM 
+        FROM
             team_members
-        WHERE 
+        WHERE
             status = 'active'
     LOOP
         -- Déterminer l'ID du rôle RBAC en fonction du rôle legacy
@@ -291,17 +291,17 @@ BEGIN
             ELSE
                 SELECT id INTO v_role_id FROM roles WHERE name = 'observer';
         END CASE;
-        
+
         -- Insertion dans user_roles
         INSERT INTO user_roles (user_id, role_id, team_id, project_id)
         VALUES (rec.user_id, v_role_id, rec.team_id, NULL)
-        ON CONFLICT (user_id, role_id, COALESCE(team_id, '00000000-0000-0000-0000-000000000000'::uuid), 
+        ON CONFLICT (user_id, role_id, COALESCE(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
                     COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid))
         DO NOTHING;
-        
+
         count_migrated := count_migrated + 1;
     END LOOP;
-    
+
     RETURN count_migrated;
 END;
 $$ LANGUAGE plpgsql;
@@ -322,14 +322,14 @@ BEGIN
         ELSE
             SELECT id INTO v_role_id FROM roles WHERE name = 'observer';
     END CASE;
-    
+
     -- Insérer dans user_roles lors de l'ajout d'un team_member
     INSERT INTO user_roles (user_id, role_id, team_id, project_id)
     VALUES (NEW.user_id, v_role_id, NEW.team_id, NULL)
-    ON CONFLICT (user_id, role_id, COALESCE(team_id, '00000000-0000-0000-0000-000000000000'::uuid), 
+    ON CONFLICT (user_id, role_id, COALESCE(team_id, '00000000-0000-0000-0000-000000000000'::uuid),
                 COALESCE(project_id, '00000000-0000-0000-0000-000000000000'::uuid))
     DO UPDATE SET role_id = v_role_id;
-    
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

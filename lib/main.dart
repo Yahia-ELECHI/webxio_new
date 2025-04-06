@@ -151,7 +151,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => RoleProvider()),
       ],
       child: MaterialApp(
-        title: 'AL MAHIR',
+        title: 'AL MAHIR Project',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
@@ -304,7 +304,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 const SizedBox(height: 24),
 
                 const Text(
-                  'AL MAHIR',
+                  'AL MAHIR Project',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,

@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -7,13 +10,9 @@ plugins {
 
 // Load almahir-key.properties file
 val keystorePropertiesFile = rootProject.file("almahir-key.properties")
-val keystoreProperties = org.gradle.internal.impldep.org.yaml.snakeyaml.Yaml()
-val readProperties = if (keystorePropertiesFile.exists()) {
-    java.util.Properties().apply {
-        load(java.io.FileInputStream(keystorePropertiesFile))
-    }
-} else {
-    java.util.Properties()
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -44,10 +43,10 @@ android {
     signingConfigs {
         if (keystorePropertiesFile.exists()) {
             create("release") {
-                keyAlias = readProperties.getProperty("keyAlias")
-                keyPassword = readProperties.getProperty("keyPassword")
-                storeFile = file(readProperties.getProperty("storeFile"))
-                storePassword = readProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
             }
         }
     }

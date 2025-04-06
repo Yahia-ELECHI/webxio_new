@@ -1,9 +1,9 @@
--- Script de correction de la fonction RBAC pour WebXIO (AL MAHIR)
+-- Script de correction de la fonction RBAC pour WebXIO (AL MAHIR Project)
 -- Ce script modifie la fonction user_has_permission pour vérifier les permissions dans tous les contextes
 
 -- Modification de la fonction pour vérifier si un utilisateur a une permission sans restriction de contexte
 CREATE OR REPLACE FUNCTION public.user_has_permission(
-    p_user_id uuid, 
+    p_user_id uuid,
     p_permission_name text,
     p_team_id uuid DEFAULT NULL,
     p_project_id uuid DEFAULT NULL
@@ -11,7 +11,7 @@ CREATE OR REPLACE FUNCTION public.user_has_permission(
 DECLARE
     has_perm boolean;
 BEGIN
-    -- Pour les écrans généraux sans contexte spécifique, 
+    -- Pour les écrans généraux sans contexte spécifique,
     -- il suffit de vérifier si l'utilisateur a la permission associée à l'un de ses rôles,
     -- indépendamment du contexte dans lequel le rôle a été attribué
     IF p_team_id IS NULL AND p_project_id IS NULL THEN
@@ -22,7 +22,7 @@ BEGIN
             WHERE ur.user_id = p_user_id
             AND p.name = p_permission_name
         ) INTO has_perm;
-        
+
         IF has_perm THEN
             RETURN true;
         END IF;
@@ -47,7 +47,7 @@ BEGIN
             OR (ur.team_id = p_team_id AND ur.project_id = p_project_id AND p_team_id IS NOT NULL AND p_project_id IS NOT NULL)
         )
     ) INTO has_perm;
-    
+
     -- Si pas de permission trouvée, vérifier les rôles team_members legacy
     IF NOT has_perm AND p_team_id IS NOT NULL THEN
         SELECT EXISTS (
@@ -60,7 +60,7 @@ BEGIN
                 (tm.role = 'admin')
                 -- Les membres ont des permissions limitées (à adapter selon vos besoins)
                 OR (tm.role = 'member' AND p_permission_name IN (
-                    'read_project', 'read_phase', 'read_task', 'update_task', 
+                    'read_project', 'read_phase', 'read_task', 'update_task',
                     'change_task_status', 'create_task'
                 ))
                 -- Les invités ont très peu de permissions
@@ -70,7 +70,7 @@ BEGIN
             )
         ) INTO has_perm;
     END IF;
-    
+
     RETURN has_perm;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
