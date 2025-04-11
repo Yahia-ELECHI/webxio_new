@@ -372,66 +372,84 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         title: _task.title,
         showLogo: false,
         actions: [
-          PermissionGated(
-            permissionName: 'update_task',
-            projectId: _task.projectId,
-            child: PopupMenuButton<String>(
-              onSelected: (value) async {
-                if (value == 'edit') {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => TaskFormScreen(
-                        projectId: _task.projectId,
-                        task: _task,
-                      ),
-                    ),
-                  );
-                  if (result == true) {
-                    await _refreshTaskDetails();
-                  }
-                } else if (value == 'delete') {
-                  _showDeleteConfirmationDialog();
-                }
-              },
-              itemBuilder: (context) {
-                final items = <PopupMenuEntry<String>>[];
-                
-                // Toujours ajouter l'option d'édition si l'utilisateur a la permission update_task
-                items.add(
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit),
-                        SizedBox(width: 8),
-                        Text('Modifier'),
-                      ],
-                    ),
-                  ),
-                );
-                
-                // Vérifier si l'utilisateur a la permission delete_task avant d'ajouter l'option supprimer
-                _roleService.hasPermission('delete_task', projectId: _task.projectId).then((hasPermission) {
-                  if (hasPermission) {
-                    items.add(
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete, color: Colors.red),
-                            SizedBox(width: 8),
-                            Text('Supprimer', style: TextStyle(color: Colors.red)),
-                          ],
+          FutureBuilder<bool>(
+            future: _roleService.hasPermission('update_task', projectId: _task.projectId),
+            builder: (context, updateSnapshot) {
+              // Afficher un indicateur de chargement pendant la vérification
+              if (updateSnapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(width: 48, child: Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))));
+              }
+              
+              // Si pas de permission update_task, ne rien afficher
+              final hasUpdatePermission = updateSnapshot.data ?? false;
+              if (!hasUpdatePermission) {
+                return const SizedBox.shrink();
+              }
+              
+              // Vérifier la permission de suppression
+              return FutureBuilder<bool>(
+                future: _roleService.hasPermission('delete_task', projectId: _task.projectId),
+                builder: (context, deleteSnapshot) {
+                  final hasDeletePermission = deleteSnapshot.data ?? false;
+                  
+                  return PopupMenuButton<String>(
+                    onSelected: (value) async {
+                      if (value == 'edit') {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TaskFormScreen(
+                              projectId: _task.projectId,
+                              task: _task,
+                            ),
+                          ),
+                        );
+                        if (result == true) {
+                          await _refreshTaskDetails();
+                        }
+                      } else if (value == 'delete') {
+                        _showDeleteConfirmationDialog();
+                      }
+                    },
+                    itemBuilder: (context) {
+                      final items = <PopupMenuEntry<String>>[];
+                      
+                      // Option d'édition (utilisateur a déjà la permission puisque nous sommes ici)
+                      items.add(
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit),
+                              SizedBox(width: 8),
+                              Text('Modifier'),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  }
-                });
-                
-                return items;
-              },
-            ),
+                      );
+                      
+                      // Option de suppression (si la permission est accordée)
+                      if (hasDeletePermission) {
+                        items.add(
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete, color: Colors.red),
+                                SizedBox(width: 8),
+                                Text('Supprimer', style: TextStyle(color: Colors.red)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      
+                      return items;
+                    },
+                  );
+                },
+              );
+            },
           ),
         ],
       ),

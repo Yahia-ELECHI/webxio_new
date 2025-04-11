@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/task_model.dart';
+import '../../models/phase_model.dart';
 import '../../services/project_service/project_service.dart';
 import '../../services/auth_service.dart';
 
@@ -8,6 +9,7 @@ class TaskForm extends StatefulWidget {
   final String projectId;
   final String? phaseId;
   final Task? task;
+  final List<Phase>? subPhases;
   final Function(Task)? onTaskCreated;
   final Function(Task)? onTaskUpdated;
 
@@ -16,6 +18,7 @@ class TaskForm extends StatefulWidget {
     required this.projectId,
     this.phaseId,
     this.task,
+    this.subPhases,
     this.onTaskCreated,
     this.onTaskUpdated,
   });
@@ -39,6 +42,7 @@ class _TaskFormState extends State<TaskForm> {
   DateTime? _dueDate;
   bool _isLoading = false;
   String? _errorMessage;
+  String? _subPhaseId;
 
   @override
   void initState() {
@@ -52,6 +56,7 @@ class _TaskFormState extends State<TaskForm> {
       _status = widget.task!.status;
       _priority = widget.task!.priority;
       _dueDate = widget.task!.dueDate;
+      _subPhaseId = widget.task!.subPhaseId;
     } else {
       // Par défaut, assigner la tâche à l'utilisateur actuel
       _loadCurrentUser();
@@ -97,6 +102,7 @@ class _TaskFormState extends State<TaskForm> {
             id: taskId,
             projectId: widget.projectId,
             phaseId: widget.phaseId,
+            subPhaseId: _subPhaseId,
             title: _titleController.text,
             description: _descriptionController.text,
             createdAt: now,
@@ -122,6 +128,7 @@ class _TaskFormState extends State<TaskForm> {
             status: _status,
             priority: _priority,
             phaseId: widget.phaseId,
+            subPhaseId: _subPhaseId,
             updatedAt: DateTime.now().toUtc(),
           );
 
@@ -314,6 +321,30 @@ class _TaskFormState extends State<TaskForm> {
                   }
                 },
               ),
+              if (widget.subPhases != null && widget.subPhases!.isNotEmpty) ...[  
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String?>(
+                  value: _subPhaseId,
+                  decoration: const InputDecoration(
+                    labelText: 'Sous-phase (optionnel)',
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Aucune sous-phase'),
+                    ),
+                    ...widget.subPhases!.map((phase) => DropdownMenuItem<String?>(
+                          value: phase.id,
+                          child: Text(phase.name),
+                        )),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _subPhaseId = value;
+                    });
+                  },
+                ),
+              ],
               if (_errorMessage != null) ...[
                 const SizedBox(height: 16),
                 Text(

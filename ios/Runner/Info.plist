@@ -48,9 +48,21 @@
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
 					<string>webxio</string>
+				</array>
+			</dict>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>com.webxio.almahir</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>almahir</string>
 				</array>
 			</dict>
 		</array>

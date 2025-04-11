@@ -46,6 +46,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   List<Task> _tasks = [];
   List<Team> _projectTeams = [];
   List<Phase> _projectPhases = [];
+  List<Phase> _projectSubPhases = [];
   List<ProjectTransaction> _projectTransactions = [];
   
   bool _isLoading = true;
@@ -55,8 +56,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   bool _hasProjectAccess = false; 
   String? _errorMessage;
   
-  // État des phases dépliées/repliées
+  // Suivi de l'état d'expansion des phases et sous-phases
   final Map<String, bool> _expandedPhases = {};
+  final Map<String, bool> _expandedSubPhases = {};
   
   // Cartes des filtres et recherche par phase - stocke les états de filtre pour chaque phase
   final Map<String, String> _searchQueries = {};
@@ -258,21 +260,37 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   Future<void> _loadProjectPhases() async {
     if (_project == null) return;
-
+    
     setState(() {
       _isLoadingPhases = true;
     });
 
     try {
+      // Charger les phases principales
       final phases = await _phaseService.getPhasesByProject(_project!.id);
+      
+      // Charger toutes les sous-phases
+      final allSubPhases = <Phase>[];
+      
+      // Pour chaque phase principale, charger ses sous-phases
+      for (final phase in phases) {
+        final subPhases = await _phaseService.getSubPhasesByParentId(phase.id);
+        allSubPhases.addAll(subPhases);
+      }
       
       setState(() {
         _projectPhases = phases;
+        _projectSubPhases = allSubPhases;
         _isLoadingPhases = false;
         
         // Initialiser toutes les phases comme repliées par défaut
         for (var phase in _projectPhases) {
           _expandedPhases[phase.id] = false;
+        }
+        
+        // Initialiser toutes les sous-phases comme repliées par défaut
+        for (var subPhase in _projectSubPhases) {
+          _expandedSubPhases[subPhase.id] = false;
         }
       });
     } catch (e) {
@@ -280,6 +298,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         _isLoadingPhases = false;
         _errorMessage = 'Erreur lors du chargement des phases: $e';
       });
+    }
+  }
+
+  // Charge les tâches du projet (utilisé pour actualiser après ajout/modification de tâches)
+  Future<void> _loadProjectTasks() async {
+    try {
+      final tasks = await _projectService.getTasksByProject(widget.projectId);
+      setState(() {
+        _tasks = tasks;
+      });
+    } catch (e) {
+      print('Erreur lors du chargement des tâches: $e');
     }
   }
 
@@ -907,8 +937,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             (index) => _buildPhaseWithTasksCard(_projectPhases[index]),
           ),
         
-        // Afficher les tâches sans phase à la fin
-        if (!_isLoading && _tasks.isNotEmpty)
+        // Afficher les tâches sans phase à la fin (seulement s'il y a des phases configurées)
+        if (!_isLoading && _tasks.isNotEmpty && _projectPhases.isNotEmpty)
           Column(
             children: [
               const SizedBox(height: 24),
@@ -1159,6 +1189,239 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     );
   }
 
+  // Construction de la carte d'une sous-phase avec ses tâches
+  Widget _buildSubPhaseWithTasksCard(Phase subPhase, Phase parentPhase) {
+    final subPhaseStatus = PhaseStatus.fromValue(subPhase.status);
+    final tasks = _tasks.where((task) => task.subPhaseId == subPhase.id).toList();
+    final completedTasks = tasks.where((task) => TaskStatus.fromValue(task.status) == TaskStatus.completed).length;
+    
+    // Vérifier si cette sous-phase est dépliée ou repliée
+    final isExpanded = _expandedSubPhases[subPhase.id] ?? false;
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12, left: 16, right: 0),
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: subPhaseStatus.getColor().withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // En-tête de la sous-phase - cliquable pour replier/déplier
+          InkWell(
+            onTap: () {
+              setState(() {
+                _expandedSubPhases[subPhase.id] = !isExpanded;
+              });
+            },
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(8),
+              topRight: Radius.circular(8),
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                color: subPhaseStatus.getColor().withOpacity(0.1),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(8),
+                  topRight: Radius.circular(8),
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: subPhaseStatus.getColor(),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                subPhase.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: subPhaseStatus.getColor().withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: subPhaseStatus.getColor(),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                subPhaseStatus.getText(),
+                                style: TextStyle(
+                                  color: subPhaseStatus.getColor(),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (subPhase.description.isNotEmpty) ...[  
+                          const SizedBox(height: 2),
+                          Text(
+                            subPhase.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.grey[700],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  // Icône de flèche pour indiquer l'état replié/déplié
+                  IconButton(
+                    icon: Icon(isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      setState(() {
+                        _expandedSubPhases[subPhase.id] = !isExpanded;
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
+            ),
+          ),
+          
+          // Progression de la sous-phase - toujours visible
+          if (tasks.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.fromLTRB(12, 6, 12, isExpanded ? 0 : 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Progression: $completedTasks/${tasks.length}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                            Text(
+                              '${(completedTasks / tasks.length * 100).toStringAsFixed(0)}%',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        LinearProgressIndicator(
+                          value: tasks.isEmpty ? 0 : completedTasks / tasks.length,
+                          backgroundColor: Colors.grey[300],
+                          valueColor: AlwaysStoppedAnimation<Color>(subPhaseStatus.getColor()),
+                          minHeight: 4,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Liste des tâches - visible uniquement si déplié
+          AnimatedCrossFade(
+            firstChild: const SizedBox(height: 0),
+            secondChild: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Tâches de la sous-phase
+                  if (tasks.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'Aucune tâche dans cette sous-phase',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                        ),
+                      ),
+                    )
+                  else
+                    ...tasks.map((task) => _buildTaskCard(task)).toList(),
+                  
+                  // Bouton pour ajouter une tâche dans cette sous-phase
+                  Center(
+                    child: PermissionGated(
+                      permissionName: 'create_task',
+                      projectId: parentPhase.projectId,
+                      child: TextButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => TaskFormScreen(
+                                projectId: parentPhase.projectId,
+                                phaseId: parentPhase.id,
+                                subPhaseId: subPhase.id,
+                              ),
+                            ),
+                          ).then((value) {
+                            if (value == true) {
+                              // Actualiser toutes les données du projet pour maintenir la cohérence
+                              _loadProjectDetails();
+                            }
+                          });
+                        },
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Ajouter une tâche'),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          textStyle: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTasksSection(Phase phase) {
     // Récupérer toutes les tâches de cette phase
     final allPhaseTasks = _tasks.where((task) => task.phaseId == phase.id).toList();
@@ -1178,13 +1441,25 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     }
     
     // Appliquer les filtres et le tri
-    final tasks = _filterTasks(
+    final filteredTasks = _filterTasks(
       allPhaseTasks,
       _searchQueries[phase.id] ?? '',
       _statusFilters[phase.id],
       _priorityFilters[phase.id],
       _sortOptions[phase.id],
     );
+    
+    // Récupérer les sous-phases associées à cette phase
+    final subPhases = _projectSubPhases.where((subPhase) => subPhase.parentPhaseId == phase.id).toList();
+    
+    // Séparer les tâches avec et sans sous-phase
+    final tasksWithSubPhase = filteredTasks.where((task) => 
+      task.subPhaseId != null && 
+      subPhases.any((subPhase) => subPhase.id == task.subPhaseId)
+    ).toList();
+    
+    // Uniquement les tâches de cette phase qui n'ont PAS de sous-phase assignée
+    final tasksWithoutSubPhase = filteredTasks.where((task) => task.subPhaseId == null).toList();
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1444,7 +1719,34 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         ),
         
         const SizedBox(height: 8),
-        if (allPhaseTasks.isEmpty)
+        
+        // Affichage des sous-phases avec leurs tâches
+        if (subPhases.isNotEmpty) ...[  
+          ...subPhases.map((subPhase) {
+            return _buildSubPhaseWithTasksCard(subPhase, phase);
+          }).toList(),
+          const SizedBox(height: 16),
+        ],
+        
+        // Tâches sans sous-phase
+        if (tasksWithoutSubPhase.isNotEmpty) ...[  
+          if (subPhases.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Tâches sans sous-phase',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ),
+          ...tasksWithoutSubPhase.map((task) => _buildTaskCard(task)).toList(),
+        ],
+        
+        // Message approprié selon le contexte (pas de tâches ou filtrage)
+        if (allPhaseTasks.isEmpty) ...[  
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -1460,8 +1762,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 ),
               ),
             ),
-          )
-        else if (tasks.isEmpty)
+          ),
+        ] else if (filteredTasks.isEmpty) ...[  
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -1477,17 +1779,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 ),
               ),
             ),
-          )
-        else
+          ),
+        ] else if (subPhases.isEmpty && tasksWithoutSubPhase.isEmpty) ...[  
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: tasks.length,
+            itemCount: filteredTasks.length,
             itemBuilder: (context, index) {
-              final task = tasks[index];
+              final task = filteredTasks[index];
               return _buildTaskCard(task);
             },
           ),
+        ]
       ],
     );
   }

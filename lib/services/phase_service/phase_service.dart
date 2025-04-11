@@ -17,6 +17,7 @@ class PhaseService {
           .from('phases')
           .select()
           .eq('project_id', projectId)
+          .filter('parent_phase_id', 'is', null)  // Récupérer uniquement les phases principales
           .order('order_index', ascending: true);
 
       return response.map<Phase>((json) => Phase.fromJson(json)).toList();
@@ -38,6 +39,39 @@ class PhaseService {
       return Phase.fromJson(response);
     } catch (e) {
       print('Erreur lors de la récupération de la phase: $e');
+      rethrow;
+    }
+  }
+  
+  // Récupérer toutes les sous-phases d'une phase principale
+  Future<List<Phase>> getSubPhasesByParentId(String parentPhaseId) async {
+    try {
+      final response = await _supabase
+          .from('phases')
+          .select()
+          .eq('parent_phase_id', parentPhaseId)
+          .order('order_index', ascending: true);
+
+      return response.map<Phase>((json) => Phase.fromJson(json)).toList();
+    } catch (e) {
+      print('Erreur lors de la récupération des sous-phases: $e');
+      return []; // Retourner une liste vide en cas d'erreur au lieu de propager l'exception
+    }
+  }
+  
+  // Récupérer toutes les phases et sous-phases d'un projet (structure plate)
+  Future<List<Phase>> getAllPhasesAndSubPhases(String projectId) async {
+    try {
+      final response = await _supabase
+          .from('phases')
+          .select()
+          .eq('project_id', projectId)
+          .order('parent_phase_id', ascending: true, nullsFirst: true) // Phases principales d'abord
+          .order('order_index', ascending: true);
+
+      return response.map<Phase>((json) => Phase.fromJson(json)).toList();
+    } catch (e) {
+      print('Erreur lors de la récupération des phases et sous-phases: $e');
       rethrow;
     }
   }
@@ -63,6 +97,7 @@ class PhaseService {
         createdBy: userId,
         orderIndex: orderIndex,
         status: PhaseStatus.notStarted.toValue(),
+        parentPhaseId: null, // S'assurer qu'il s'agit d'une phase principale
       );
 
       await _supabase.from('phases').insert(phase.toJson());
@@ -73,6 +108,50 @@ class PhaseService {
       return phase;
     } catch (e) {
       print('Erreur lors de la création de la phase: $e');
+      rethrow;
+    }
+  }
+  
+  // Créer une nouvelle sous-phase
+  Future<Phase> createSubPhase(
+    String parentPhaseId,
+    String name,
+    String description,
+    {String? status}
+  ) async {
+    try {
+      // Récupérer la phase parente pour obtenir le projectId et calculer l'ordre
+      final parentPhase = await getPhaseById(parentPhaseId);
+      final projectId = parentPhase.projectId;
+      
+      // Récupérer le nombre de sous-phases existantes pour déterminer l'ordre
+      final existingSubPhases = await getSubPhasesByParentId(parentPhaseId);
+      final orderIndex = existingSubPhases.length;
+      
+      final userId = _supabase.auth.currentUser!.id;
+      final phaseId = _uuid.v4();
+      final now = DateTime.now().toUtc();
+
+      final subPhase = Phase(
+        id: phaseId,
+        projectId: projectId,
+        name: name,
+        description: description,
+        createdAt: now,
+        createdBy: userId,
+        orderIndex: orderIndex,
+        status: status ?? PhaseStatus.notStarted.toValue(),
+        parentPhaseId: parentPhaseId,
+      );
+
+      await _supabase.from('phases').insert(subPhase.toJson());
+      
+      // Envoyer une notification pour la création de la sous-phase
+      await _notifyPhaseCreation(subPhase);
+      
+      return subPhase;
+    } catch (e) {
+      print('Erreur lors de la création de la sous-phase: $e');
       rethrow;
     }
   }
@@ -129,6 +208,30 @@ class PhaseService {
       }
     } catch (e) {
       print('Erreur lors de la réorganisation des phases: $e');
+      rethrow;
+    }
+  }
+  
+  // Réordonner les sous-phases
+  Future<void> reorderSubPhases(List<Phase> subPhases) async {
+    try {
+      // Vérifier que toutes les phases ont le même parent
+      if (subPhases.isNotEmpty) {
+        final parentId = subPhases.first.parentPhaseId;
+        if (subPhases.any((phase) => phase.parentPhaseId != parentId)) {
+          throw Exception('Toutes les sous-phases doivent avoir le même parent');
+        }
+      }
+      
+      for (int i = 0; i < subPhases.length; i++) {
+        final subPhase = subPhases[i];
+        await _supabase
+            .from('phases')
+            .update({'order_index': i})
+            .eq('id', subPhase.id);
+      }
+    } catch (e) {
+      print('Erreur lors de la réorganisation des sous-phases: $e');
       rethrow;
     }
   }

@@ -792,7 +792,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _preparePhaseProgressData(List<Phase> phases, List<Task> tasks) {
-    _phaseProgressData = phases.map((phase) {
+    // Filtrer pour n'inclure que les phases principales (sans parentPhaseId)
+    final mainPhases = phases.where((phase) => phase.parentPhaseId == null).toList();
+    
+    _phaseProgressData = mainPhases.map((phase) {
 
       // Calcul du pourcentage de progression
       final phaseTasks = tasks.where((task) => task.phaseId == phase.id).toList();
@@ -1328,6 +1331,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       filteredPhases = _phasesList.where((phase) => phase.projectId == _selectedProjectId).toList();
       relevantProjects = _projectsList.where((project) => project.id == _selectedProjectId).toList();
     }
+    
+    // Ne compter que les phases principales (sans parentPhaseId)
+    filteredPhases = filteredPhases.where((phase) => phase.parentPhaseId == null).toList();
 
     // Calculer le nombre de tâches terminées
     final int completedTasks = filteredTasks.where((task) =>

@@ -15,12 +15,14 @@ class TaskFormScreen extends StatefulWidget {
   final String projectId;
   final Task? task;
   final String? phaseId;
+  final String? subPhaseId;
 
   const TaskFormScreen({
     super.key,
     required this.projectId,
     this.task,
     this.phaseId,
+    this.subPhaseId,
   });
 
   @override
@@ -44,8 +46,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   String? _selectedPhaseId;
+  String? _selectedSubPhaseId;
   List<Phase> _phases = [];
+  List<Phase> _subPhases = [];
   bool _loadingPhases = true;
+  bool _loadingSubPhases = false;
   
   // Nouvelles variables pour la gestion des équipes
   bool _assignToTeam = false;
@@ -79,8 +84,20 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       _priority = widget.task!.priority;
       _dueDate = widget.task!.dueDate;
       _selectedPhaseId = widget.task!.phaseId;
+      _selectedSubPhaseId = widget.task!.subPhaseId;
+      
+      // Si une phase est déjà sélectionnée, charger ses sous-phases
+      if (_selectedPhaseId != null) {
+        _loadSubPhases(_selectedPhaseId!);
+      }
     } else if (widget.phaseId != null) {
       _selectedPhaseId = widget.phaseId;
+      _loadSubPhases(widget.phaseId!);
+      
+      // Si une sous-phase est spécifiée lors de la création
+      if (widget.subPhaseId != null) {
+        _selectedSubPhaseId = widget.subPhaseId;
+      }
     }
   }
 
@@ -143,6 +160,44 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       });
     }
   }
+  
+  Future<void> _loadSubPhases(String phaseId) async {
+    // Conserver la sous-phase actuelle si on est en mode édition
+    final currentSubPhaseId = _selectedSubPhaseId;
+    final isEditingExistingTask = widget.task != null;
+    
+    setState(() {
+      _loadingSubPhases = true;
+      _subPhases = [];
+      // Ne pas réinitialiser si on édite une tâche existante avec une sous-phase
+      if (!isEditingExistingTask || currentSubPhaseId == null) {
+        _selectedSubPhaseId = null;
+      }
+    });
+    
+    try {
+      // S'assurer que nous ne chargeons que les sous-phases de la phase sélectionnée
+      final subPhases = await _phaseService.getSubPhasesByParentId(phaseId);
+      setState(() {
+        _subPhases = subPhases;
+        _loadingSubPhases = false;
+        
+        // Vérifier si la sous-phase précédemment sélectionnée existe toujours dans la liste
+        if (isEditingExistingTask && currentSubPhaseId != null) {
+          // Vérifier si la sous-phase sélectionnée fait partie de cette phase
+          final subPhaseExists = subPhases.any((subPhase) => subPhase.id == currentSubPhaseId);
+          if (subPhaseExists) {
+            _selectedSubPhaseId = currentSubPhaseId;
+          }
+        }
+      });
+    } catch (e) {
+      print('Erreur lors du chargement des sous-phases: $e');
+      setState(() {
+        _loadingSubPhases = false;
+      });
+    }
+  }
 
   // Méthode pour s'assurer qu'il n'y a pas de doublons dans la liste des membres
   List<Map<String, dynamic>> _getUniqueMembers() {
@@ -193,6 +248,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
           id: Uuid().v4(), // Générer un ID unique
           projectId: widget.projectId,
           phaseId: _selectedPhaseId,
+          subPhaseId: _selectedSubPhaseId,
           title: _titleController.text.trim(),
           description: _descriptionController.text.trim(),
           createdAt: DateTime.now(),
@@ -219,6 +275,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
           priority: _priority,
           dueDate: _dueDate,
           phaseId: _selectedPhaseId,
+          subPhaseId: _selectedSubPhaseId,
         );
 
         // Utiliser la méthode updateTask mise à jour qui prend en compte les changements
@@ -314,6 +371,84 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
               maxLines: 3,
             ),
             const SizedBox(height: 16),
+            
+            // Sélection de la phase
+            _loadingPhases
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8.0),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                : DropdownButtonFormField<String?>(
+                    decoration: const InputDecoration(
+                      labelText: 'Phase',
+                      border: OutlineInputBorder(),
+                    ),
+                    value: _selectedPhaseId,
+                    hint: const Text('Sélectionner une phase'),
+                    items: [
+                      ..._phases.map((phase) => DropdownMenuItem<String?>(
+                            value: phase.id,
+                            child: Text(phase.name),
+                          )),
+                    ],
+                    validator: (value) {
+                      if (value == null) {
+                        return 'Veuillez sélectionner une phase';
+                      }
+                      return null;
+                    },
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedPhaseId = value;
+                        _selectedSubPhaseId = null; // Réinitialiser la sous-phase
+                        _subPhases = []; // Réinitialiser les sous-phases
+                      });
+                      if (value != null) {
+                        _loadSubPhases(value);
+                      }
+                    },
+                  ),
+            const SizedBox(height: 16),
+            
+            // Sélection de la sous-phase (si disponible)
+            if (_selectedPhaseId != null) ...
+            [
+              _loadingSubPhases
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8.0),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  : _subPhases.isNotEmpty
+                      ? DropdownButtonFormField<String?>(
+                          decoration: const InputDecoration(
+                            labelText: 'Sous-phase (optionnel)',
+                            border: OutlineInputBorder(),
+                          ),
+                          value: _selectedSubPhaseId,
+                          hint: const Text('Sélectionner une sous-phase'),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('Aucune sous-phase'),
+                            ),
+                            ..._subPhases.map((subPhase) => DropdownMenuItem<String?>(
+                                  value: subPhase.id,
+                                  child: Text(subPhase.name),
+                                )),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedSubPhaseId = value;
+                            });
+                          },
+                        )
+                      : Container(),
+              const SizedBox(height: 16),
+            ],
             
             // Contrôle d'assignation avec permission 'assign_task'
             PermissionGated(
@@ -469,47 +604,6 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            if (_loadingPhases)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8.0),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else if (_phases.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'Phase',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-                value: _selectedPhaseId,
-                hint: const Text('Sélectionner une phase'),
-                items: [
-                  const DropdownMenuItem<String>(
-                    value: null,
-                    child: Text('Aucune phase'),
-                  ),
-                  ..._phases.map((phase) => DropdownMenuItem<String>(
-                    value: phase.id,
-                    child: Text(phase.name),
-                  )).toList(),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedPhaseId = value;
-                  });
-                },
-              ),
-            ],
             const SizedBox(height: 16),
             InkWell(
               onTap: _selectDueDate,

@@ -13,6 +13,7 @@ class Phase {
   final double? budgetAllocated;
   final double? budgetConsumed;
   final String? projectName;
+  final String? parentPhaseId;
 
   Phase({
     required this.id,
@@ -27,6 +28,7 @@ class Phase {
     this.budgetAllocated = 0,
     this.budgetConsumed = 0,
     this.projectName,
+    this.parentPhaseId,
   });
 
   // Convertir un objet JSON en objet Phase
@@ -54,6 +56,7 @@ class Phase {
               : json['budget_consumed'] as double)
           : 0,
       projectName: json['project_name'] != null ? json['project_name'] as String : null,
+      parentPhaseId: json['parent_phase_id'] as String?,
     );
   }
 
@@ -71,6 +74,7 @@ class Phase {
       'status': status,
       'budget_allocated': budgetAllocated,
       'budget_consumed': budgetConsumed,
+      'parent_phase_id': parentPhaseId,
       // 'project_name' est supprimé car il n'existe pas dans la table de la base de données
     };
   }
@@ -89,6 +93,7 @@ class Phase {
     double? budgetAllocated,
     double? budgetConsumed,
     String? projectName,
+    String? parentPhaseId,
   }) {
     return Phase(
       id: id ?? this.id,
@@ -103,6 +108,7 @@ class Phase {
       budgetAllocated: budgetAllocated ?? this.budgetAllocated,
       budgetConsumed: budgetConsumed ?? this.budgetConsumed,
       projectName: projectName ?? this.projectName,
+      parentPhaseId: parentPhaseId ?? this.parentPhaseId,
     );
   }
 
@@ -124,6 +130,9 @@ class Phase {
     if (budgetAllocated == null || budgetConsumed == null) return false;
     return budgetConsumed! > budgetAllocated!;
   }
+  
+  // Vérifier si c'est une sous-phase
+  bool get isSubPhase => parentPhaseId != null;
 
   // Obtenir une couleur en fonction de l'état du budget
   Color getBudgetStatusColor() {

@@ -4,6 +4,7 @@ class Task {
   final String id;
   final String projectId;
   final String? phaseId;
+  final String? subPhaseId;
   final String title;
   final String description;
   final DateTime createdAt;
@@ -20,6 +21,7 @@ class Task {
     required this.id,
     required this.projectId,
     this.phaseId,
+    this.subPhaseId,
     required this.title,
     required this.description,
     required this.createdAt,
@@ -39,6 +41,7 @@ class Task {
       id: json['id'] as String,
       projectId: json['project_id'] as String,
       phaseId: json['phase_id'] as String?,
+      subPhaseId: json['sub_phase_id'] as String?,
       title: json['title'] as String,
       description: json['description'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -71,6 +74,7 @@ class Task {
       'id': id,
       'project_id': projectId,
       'phase_id': phaseId,
+      'sub_phase_id': subPhaseId,
       'title': title,
       'description': description,
       'created_at': createdAt.toIso8601String(),
@@ -90,6 +94,7 @@ class Task {
     String? id,
     String? projectId,
     String? phaseId,
+    String? subPhaseId,
     String? title,
     String? description,
     DateTime? createdAt,
@@ -106,6 +111,7 @@ class Task {
       id: id ?? this.id,
       projectId: projectId ?? this.projectId,
       phaseId: phaseId ?? this.phaseId,
+      subPhaseId: subPhaseId ?? this.subPhaseId,
       title: title ?? this.title,
       description: description ?? this.description,
       createdAt: createdAt ?? this.createdAt,

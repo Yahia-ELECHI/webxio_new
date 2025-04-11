@@ -346,8 +346,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> with SingleTickerPr
           ),
         );
         
-        // Compter les phases par projet
-        final projectPhases = accessiblePhases.where((phase) => phase.projectId == project.id).toList();
+        // Compter les phases par projet (seulement les phases principales, sans parent)
+        final projectPhases = accessiblePhases.where((phase) => 
+          phase.projectId == project.id && phase.parentPhaseId == null
+        ).toList();
         _projectPhaseData.add(
           ProjectPhaseData(
             projectName: project.name,
